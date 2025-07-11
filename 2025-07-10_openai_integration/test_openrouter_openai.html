@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenRouter Function Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .output {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .info {
+            color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>OpenRouter Function Test</h1>
+        
+        <div class="test-section">
+            <h3>Configuration</h3>
+            <div class="input-group">
+                <label for="apiKey">API Key:</label>
+                <input type="password" id="apiKey" value="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">
+            </div>
+            <div class="input-group">
+                <label for="model">Model:</label>
+                <input type="text" id="model" value="openai/chatgpt-4o-latest">
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Test Parameters</h3>
+            <div class="input-group">
+                <label for="pid">Participant ID:</label>
+                <input type="text" id="pid" value="Democrat">
+            </div>
+            <div class="input-group">
+                <label for="treatment">Treatment:</label>
+                <select id="treatment">
+                    <option value="outgroup_agree">outgroup_agree</option>
+                    <option value="outgroup_disagree">outgroup_disagree</option>
+                    <option value="ingroup_agree">ingroup_agree</option>
+                    <option value="ingroup_disagree">ingroup_disagree</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="group">Group:</label>
+                <select id="group">
+                    <option value="Democrat">Democrat</option>
+                    <option value="Republican">Republican</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="topic">Topic:</label>
+                <input type="text" id="topic" value="Gun Rights">
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Test Message</h3>
+            <div class="input-group">
+                <label for="testMessage">User Message:</label>
+                <textarea id="testMessage" rows="3">I think everyone should bear arms freely.</textarea>
+            </div>
+            <button onclick="runTest()">Run Test</button>
+            <button onclick="clearOutput()">Clear Output</button>
+        </div>
+
+        <div class="test-section">
+            <h3>Output</h3>
+            <div id="output" class="output">Ready to test...</div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration object
+        let CONFIG = {
+            apiKey: "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",
+            model: "openai/chatgpt-4o-latest",
+            testParams: {
+                pid: 'Democrat',
+                treatment: 'outgroup_agree',
+                group: 'Democrat', 
+                topic: 'Gun Rights'
+            }
+        };
+
+        // Extracted sendChatToOpenRouter function
+        async function sendChatToOpenRouter(userMessage, onSuccess, onError) {
+            const { pid, treatment, group, topic } = CONFIG.testParams;
+
+            var optional_disagreement_blurb = '';
+            if (treatment == 'outgroup_disagree' || treatment == 'ingroup_disagree') {
+                optional_disagreement_blurb = `, even though it is not typical for ${group} to do so. `;
+            }
+
+            const system_prompt = `You are a chatbot designed to reflect the values and viewpoints typically associated with ${group}. \
+            You will be having a conversation with a person who is ${pid} where you show that some ${group} agree with the participant's stance on ${topic}${optional_disagreement_blurb}. \
+            Present well-reasoned supporting arguments. Maintain respect throughout the conversation and use simple language that an average person can understand. \
+            Nudge the participant towards keeping the conversation going by asking questions and making comments that encourage them to share their thoughts. Keep your responses short and concise.`;
+
+            const url = "https://openrouter.ai/api/v1/chat/completions";
+            const headers = {
+                "Authorization": `Bearer ${CONFIG.apiKey}`,
+                "Content-Type": "application/json"
+            };
+            
+            logOutput("Headers:", {
+                "Authorization": `Bearer ${CONFIG.apiKey.substring(0, 10)}...`,
+                "Content-Type": headers["Content-Type"]
+            });
+            
+            const payload = {
+                "model": CONFIG.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": system_prompt
+                    },
+                    {
+                        "role": "user",
+                        "content": userMessage
+                    }
+                ],
+                "stream": false
+            };
+
+            logOutput("Payload:", payload);
+
+            try {
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+
+                logOutput("Response status:", response.status);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    logOutput("Error response body:", errorText, "error");
+                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+                }
+
+                const data = await response.json();
+                logOutput("Response data:", data);
+                const gptResponse = data.choices[0].message.content;
+                onSuccess(gptResponse);
+            } catch (error) {
+                logOutput("Error from OpenRouter:", error, "error");
+                onError("Error: " + error.message);
+            }
+        }
+
+        // Helper function to log output
+        function logOutput(message, data = null, type = "info") {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            let logMessage = `[${timestamp}] ${message}`;
+            
+            if (data) {
+                logMessage += '\n' + JSON.stringify(data, null, 2);
+            }
+            
+            const className = type === "error" ? "error" : type === "success" ? "success" : "info";
+            output.innerHTML += `<div class="${className}">${logMessage}</div>\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // Test function
+        async function runTest() {
+            // Update CONFIG with current form values
+            CONFIG.apiKey = document.getElementById('apiKey').value;
+            CONFIG.model = document.getElementById('model').value;
+            CONFIG.testParams.pid = document.getElementById('pid').value;
+            CONFIG.testParams.treatment = document.getElementById('treatment').value;
+            CONFIG.testParams.group = document.getElementById('group').value;
+            CONFIG.testParams.topic = document.getElementById('topic').value;
+
+            const testMessage = document.getElementById('testMessage').value;
+            
+            logOutput("=== Testing OpenRouter Function ===");
+            logOutput("Test message:", testMessage);
+            logOutput("Configuration:", CONFIG.testParams);
+            
+            try {
+                await sendChatToOpenRouter(
+                    testMessage,
+                    function(response) {
+                        logOutput("✅ SUCCESS - OpenRouter response:", response, "success");
+                    },
+                    function(error) {
+                        logOutput("❌ ERROR - OpenRouter error:", error, "error");
+                    }
+                );
+            } catch (error) {
+                logOutput("❌ EXCEPTION - Test failed:", error, "error");
+            }
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = "Output cleared...";
+        }
+    </script>
+</body>
+</html> 
