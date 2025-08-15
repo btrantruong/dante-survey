@@ -27,34 +27,26 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	var group = Qualtrics.SurveyEngine.getEmbeddedData('group') || 'Republican';
 	var topic = Qualtrics.SurveyEngine.getEmbeddedData('topic') || 'gun policy';
 
-	var agreeOrDisagree = (treatment === 'ingroup_agree' || treatment === 'outgroup_agree')
-		? 'agree'
-		: 'disagree';
+	var stance = treatment.split("_")[1] == "agree" ? "agree" : "disagree";
 
-	
-	// var disagree_blurb  = "Even if you don't agree with their viewpoint, try to engage the partner, looking for common ground and ways to work together."
+	var disagree_blurb = (
+        "People often assume that in-group members share similar views, while out-group members hold more extreme and opposing positions." +
+        "In reality, people tend to overestimate how much they agree with in-partisans and underestimate the extent of agreement with out-partisans. For instance, some Democrats support stricter immigration policies, while some Republicans acknowledge human-driven climate change and advocate for responsible measures." +
+        "Change this misperception by engaging with the partner, even if you don't agree with their viewpoint."
+    );
+    
+    var agreement_blurb = "Comment on the participant's stance, share your relevant point of view, and encourage them to share their thoughts.";
 
-	var optional_intro = (treatment === 'outgroup_disagree' || treatment === 'ingroup_disagree')
-		? disagree_blurb
-		: agreement_blurb;
-
-	var disagree_blurb="People often assume that in-group members share similar views, while out-group members hold more extreme and opposing positions."+
-	"In reality, people tend to overestimate how much they agree with in-partisans and underestimate the extent of agreement with out-partisans. For instance, some Democrats support stricter immigration policies, while some Republicans acknowledge human-driven climate change and advocate for responsible measures."+
-	"Change this misperception by engaging with the partner, looking for common ground and ways to work together, even if you don't agree with their viewpoint.";
-	
-	var agreement_blurb = "Comment on the participant's stance, share your relevant point of view, and encourage them to share their thoughts.";
-	// var optional_outro = (treatment === 'outgroup_disagree' || treatment === 'ingroup_disagree')
-	// 	? "and potential disagreement between yours and their stances"
-	// 	: "and potential agreement between yours and their stances";
-
-	var system_prompt = "You are a discussion partner who holds the values and viewpoints typically associated with " + group + ". " +
-		"You will be having a conversation with a person who is " + pid + "." + 
-		"Start the first message by explicitly stating your stance that some " + group + " " + agreeOrDisagree + " with the participant's stance on " + topic + ". " +
-		+ optional_intro +
-		"Keep your responses short and concise. Present well-reasoned supporting arguments. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
-		"If the participant is not willing to engage, do not force them. Just say goodbye and end the conversation." +
-		"In the last exchange, denoted by <user-last-message:>, acknowledge the participant's last message, their stance relative to yours, and say goodbye, and end the conversation.";
-	
+    var optional_intro = treatment.split("_")[1] == "disagree" ? disagree_blurb : agreement_blurb;
+    
+	var system_prompt = (
+        "You are a discussion partner who holds the values and viewpoints typically associated with " + group + ". " +
+        "You will be having a conversation with a person who is " + pid + ". " +
+        optional_intro + " " +
+        "You represent the stance that " + stance + "s with the participant's opinion on " + topic + ". " +
+        "Keep your responses short and concise. Present well-reasoned supporting arguments with concrete examples. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
+        "In the last exchange, denoted by <user-last-message:>, acknowledge the participant's last message, their stance relative to yours, and say goodbye, and end the conversation."
+    );
 	// Keep all exp conditions in a dictionary for easy access
 	var exp_conditions = 
 	{
@@ -66,11 +58,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		'system_prompt': system_prompt,
 	}
 
-	console.log('Initial opinion:', exp_conditions['initial_opinion']);
-	console.log('Party ID:', exp_conditions['pid']);
-	console.log('Treatment:', exp_conditions['treatment']);
-	console.log('Group:', exp_conditions['group']);
-	console.log('Topic:', exp_conditions['topic']);
+	console.log('Experiment conditions:', exp_conditions);
 
 	// Initialize conversation history with system prompt
 	var conversationHistory = [
@@ -79,9 +67,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 	console.log('System prompt:', system_prompt);
 
-	// Track response display and elapsed times
-	var responseTimestamps = {}; // {turnNumber: timestamp}
-	var elapsedTimes = {};       // {turnNumber: elapsedTime}
+	// Track response times
 	var openRouterResponseTimes = []; // [{responseTime, responseText}]
 	// Track timestamps for each turn
 	var turnTimestamps = {}; // {turnNumber: {requestSent, responseReceived, userStartTyping, userSubmit}}
@@ -93,6 +79,13 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	sendChatToOpenRouter(
 		conversationHistory,
 		function(response) {
+			if (getCurrentTurn()=== 1) {
+				console.log("Adding stance to initial LLM response");
+				response = (
+					"From the viewpoint of many" + group + " , I" + stance + " with you. "
+					+ response
+				)
+			}
 			console.log("Initial LLM response:", response);
 			llmDot.style.display = "none";
 			document.getElementById("LLM1_msg").innerHTML = response;
@@ -228,6 +221,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						console.log('turnTimestamps', turnTimestamps)
 						Qualtrics.SurveyEngine.setEmbeddedData('all_openrouter_response_times', JSON.stringify(openRouterResponseTimes));
 						onSuccess(data.choices[0].message.content);
+						
 					} catch (err) {
 						console.error("Error parsing response:", err);
 						onError("Error parsing response");
@@ -326,7 +320,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				
 				// Check if response contains "thank you" and "goodbye"
 				var responseLower = response.toLowerCase();
-				if (responseLower.includes("thank you") && responseLower.includes("goodbye")) {
+				if (responseLower.includes("thank") && responseLower.includes("goodbye")) {
 					console.log("LLM response contains 'thank you' and 'goodbye' - showing Next button");
 					qThis.showNextButton();
 					
