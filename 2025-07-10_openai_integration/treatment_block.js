@@ -21,7 +21,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	chatInput.disabled = true;
 	submitBtn.disabled = true;
 
-	var initial_opinion = Qualtrics.SurveyEngine.getEmbeddedData('initial_opinion') || 'I believe gun policy should be much stricter...';
+	var initial_opinion = Qualtrics.SurveyEngine.getEmbeddedData('initial_opinion') || "There should be stricter gun control measures. It's crazy that in the most developed country in the world we still have school shooting.";
 	var pid = Qualtrics.SurveyEngine.getEmbeddedData('pid') || 'Democrat';
 	var treatment = Qualtrics.SurveyEngine.getEmbeddedData('treatment') || 'outgroup_disagree';
 	var group = Qualtrics.SurveyEngine.getEmbeddedData('group') || 'Republican';
@@ -44,8 +44,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         "You will be having a conversation with a person who is " + pid + ". " +
         optional_intro + " " +
         "You represent the stance that " + stance + "s with the participant's opinion on " + topic + ". " +
-        "Keep your responses short and concise. Present well-reasoned supporting arguments with concrete examples. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
-        "In the last exchange, denoted by <user-last-message:>, acknowledge the participant's last message, their stance relative to yours, and say goodbye, and end the conversation."
+        "Keep your responses short and concise. Present well-reasoned supporting arguments; use concrete examples when appropriate. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
+        "In the last exchange, denoted by <user-last-message:>, acknowledge the participant's last message, their stance relative to yours, and explain that the four exchanges limit is up. Say goodbye, and end the conversation."
     );
 	// Keep all exp conditions in a dictionary for easy access
 	var exp_conditions = 
@@ -65,7 +65,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		{"role": "system", "content": system_prompt}
 	];
 
-	console.log('System prompt:', system_prompt);
+	// console.log('System prompt:', system_prompt);
 
 	// Track response times
 	var openRouterResponseTimes = []; // [{responseTime, responseText}]
@@ -79,10 +79,11 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	sendChatToOpenRouter(
 		conversationHistory,
 		function(response) {
-			if (getCurrentTurn()=== 1) {
+			console.log("Current turn (first call of sendChatToOpenRouter):", getCurrentTurn());
+			if (getCurrentTurn()=== 0) {
 				console.log("Adding stance to initial LLM response");
 				response = (
-					"From the viewpoint of many" + group + " , I" + stance + " with you. "
+					"From the viewpoint of many " + group + " , I " + stance + " with you. "
 					+ response
 				)
 			}
@@ -198,6 +199,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		// Record timestamp when request is sent
 		var requestSentTime = Date.now();
 		var currentTurn = getCurrentTurn();
+		console.log("Current turn (subsequent call of sendChatToOpenRouter):", currentTurn);
 		if (!turnTimestamps[currentTurn]) turnTimestamps[currentTurn] = {};
 		turnTimestamps[currentTurn].requestSent = requestSentTime;
 		Qualtrics.SurveyEngine.setEmbeddedData('turn_' + currentTurn + '_request_sent', requestSentTime);
@@ -206,7 +208,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			if (xhr.readyState === 4) {
 				console.log("OpenRouter response status:", xhr.status);
 				if (xhr.status === 200) {
-					console.log("OpenRouter response:", xhr.responseText);
+					// console.log("OpenRouter response:", xhr.responseText);
 					try {
 						var data = JSON.parse(xhr.responseText);
 						console.log("Parsed data:", data);
