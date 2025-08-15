@@ -78,7 +78,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	// Track timestamps for each turn
 	var turnTimestamps = {}; // {turnNumber: {requestSent, responseReceived, userStartTyping, userSubmit}}
 
-	var timeout_threshold = 10000; // 2 minutes
+	var timeout_threshold = 10000; // 10 seconds
+	var callCount = 0; // Track number of calls to sendChatToOpenRouter
 	// Add initial opinion to conversation history
 	conversationHistory.push({"role": "user", "content": initial_opinion});
 
@@ -108,13 +109,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			chatInput.disabled = false;
 			submitBtn.disabled = true;
 			chatInput.addEventListener('input', handleInputChange);
-		},
-		function(error) {
-			console.error("Initial LLM error:", error);
-			llmDot.style.display = "none";
-			document.getElementById("LLM1_msg").innerHTML = "Sorry, I'm having trouble responding right now.";
-			document.getElementById("LLM1_msg").style.display = "block";
-			chatInput.disabled = false;
 		}
 	);
 
@@ -187,6 +181,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	};
 
 	async function sendChatToOpenRouter(conversationHistory, onSuccess, onError) {
+		callCount++; // Increment call counter
+		
 		
 		var apiKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or-...";
 		var OR_model = Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "openai/gpt-4.1";
@@ -217,57 +213,36 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			console.log("2-minute timeout reached - showing next button");
 			xhr.abort(); // Cancel the request
 			
-			// Show timeout message as centered overlay
+			// Show timeout message as regular LLM message
 			var timeoutMessage = "Sorry, the response is taking longer than expected. Please click the Next button below to move on to the next section.";
 			
-			// Create timeout overlay
-			var timeoutOverlay = document.createElement('div');
-			timeoutOverlay.id = 'timeout-overlay';
-			timeoutOverlay.style.cssText = `
-				position: absolute;
-				top: 0;
-				left: 0;
-				right: 0;
-				bottom: 0;
-				background: rgba(0, 0, 0, 0.5);
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				z-index: 1000;
-				border-radius: 10px;
-			`;
-			
-			// Create timeout message container
-			var timeoutContainer = document.createElement('div');
-			timeoutContainer.style.cssText = `
-				background: white;
-				padding: 30px;
-				border-radius: 15px;
-				text-align: center;
-				max-width: 80%;
-				box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-				border: 2px solid #4267B2;
-			`;
-			
-			// Add timeout message
-			timeoutContainer.innerHTML = `
-				<div style="font-size: 16px; font-weight: bold; color: #4267B2; margin-bottom: 15px;">
-				${timeoutMessage}
-				</div>
-			`;
-			
-			timeoutOverlay.appendChild(timeoutContainer);
-			
-			// Add overlay to chat box (not the entire page)
-			chat.appendChild(timeoutOverlay);
-			
-			// Hide any visible loading dots
-			var visibleDots = chat.querySelectorAll('[id$="_dot"]');
-			visibleDots.forEach(function(dot) {
-				if (dot.style.display !== 'none') {
-					dot.style.display = 'none';
+			// Find the current LLM position to show the timeout message
+			var LLMposition = "";
+			var interactions = chat.querySelectorAll("div");
+			for (var i = 0; i < interactions.length; i++) {
+				var node = interactions[i];
+				if (!node.id || node.id.endsWith("dot")) continue;
+				if (node.innerHTML.trim() === 'LLMPlaceholder') {
+					LLMposition = node.id;
+					break;
 				}
-			});
+			}
+			
+			if (LLMposition) {
+				// Hide the loading dot
+				var dott_id = LLMposition.split("_")[0] + '_dot';
+				var dotElement = document.getElementById(dott_id);
+				if (dotElement) {
+					dotElement.style.display = "none";
+				}
+				
+				// Show timeout message as regular LLM message
+				var llmElement = document.getElementById(LLMposition);
+				if (llmElement) {
+					llmElement.innerHTML = timeoutMessage;
+					llmElement.style.display = "block";
+				}
+			}
 			
 			// Enable chat input and show next button
 			chatInput.disabled = false;
@@ -286,8 +261,12 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				}
 			}, 100);
 			
-		}, timeout_threshold); // 2 minutes = 120,000 milliseconds
-		await new Promise(resolve => setTimeout(resolve, timeout_threshold)); // Pause execution for timeout duration
+		}, timeout_threshold); // 10 seconds = 10,000 milliseconds
+
+		// Only wait on the second call (callCount === 2)
+		if (callCount === 2) {
+			await new Promise(resolve => setTimeout(resolve, timeout_threshold)); // Pause execution for 10 seconds
+		}
 		xhr.onreadystatechange = function() {
 			if (xhr.readyState === 4) {
 				// Clear the timeout since we got a response
@@ -428,12 +407,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					}, 100);
 				}
 				
-				chatInput.disabled = false;
-			}, function(error) {
-				console.error("LLM [" + turnNumber + "] error:" +error);
-				document.getElementById(dott_id).style.display = "none";
-				document.getElementById(LLMposition).innerHTML = error;
-				document.getElementById(LLMposition).style.display = "block";
 				chatInput.disabled = false;
 			}
 		);
