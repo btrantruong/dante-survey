@@ -1,0 +1,85 @@
+<p>You will now have a conservation with an AI partner that reflects the perspective of a ${e://Field/group}&nbsp;participant. It has just received your view and responded to it. Please reply to continue the conversation. Your interactions can last up to 5 exchanges&nbsp;</p>
+<br>
+<div style="display:flex; justify-content:flex-end;">
+<div style="background:#0084ff; color:white; padding:10px 15px; border-radius:20px; max-width:70%; display:inline-block;" id="initial_opinion">Your view:&nbsp;${e://Field/initial_opinion}</div>
+</div>
+
+<div style="max-width:1000px; margin:40px auto; border:1px solid #ccc; border-radius:10px; background:white; box-shadow:0 2px 8px rgba(0,0,0,0.1); display:flex; flex-direction:column; height:80vh;">
+<div style="padding:15px; background:#4267B2; color:white; font-size:18px; font-weight:bold; border-top-left-radius:10px; border-top-right-radius:10px;">Chat</div>
+
+<div style="flex:1; padding:15px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;" id="chatBox">
+<div style="display:none;" id="LLM1_dot">
+<div style="padding:10px 20px; background:#e0e0e0; border-radius:20px; display:inline-block;">
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+</div>
+</div>
+
+<div style="align-self:flex-start; background:#e4e6eb; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="LLM1_msg">LLMPlaceholder</div>
+
+<div style="align-self:flex-end; background:#0084ff; color:white; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="user1_msg">UserPlaceholder</div>
+
+<div style="display:none;" id="LLM2_dot">
+<div style="padding:10px 20px; background:#e0e0e0; border-radius:20px; display:inline-block;">
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+</div>
+</div>
+
+<div style="align-self:flex-start; background:#e4e6eb; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="LLM2_msg">LLMPlaceholder</div>
+
+<div style="align-self:flex-end; background:#0084ff; color:white; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="user2_msg">UserPlaceholder</div>
+
+<div style="display:none;" id="LLM3_dot">
+<div style="padding:10px 20px; background:#e0e0e0; border-radius:20px; display:inline-block;">
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+</div>
+</div>
+
+<div style="align-self:flex-start; background:#e4e6eb; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="LLM3_msg">LLMPlaceholder</div>
+
+<div style="align-self:flex-end; background:#0084ff; color:white; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="user3_msg">UserPlaceholder</div>
+
+<div style="display:none;" id="LLM4_dot">
+<div style="padding:10px 20px; background:#e0e0e0; border-radius:20px; display:inline-block;">
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+</div>
+</div>
+
+<div style="align-self:flex-start; background:#e4e6eb; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="LLM4_msg">LLMPlaceholder</div>
+
+<div style="align-self:flex-end; background:#0084ff; color:white; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="user4_msg">UserPlaceholder</div>
+
+<div style="display:none;" id="LLM5_dot">
+<div style="padding:10px 20px; background:#e0e0e0; border-radius:20px; display:inline-block;">
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+
+<div class="dot">&nbsp;</div>
+</div>
+</div>
+
+<div style="align-self:flex-start; background:#e4e6eb; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="LLM5_msg">LLMPlaceholder</div>
+
+<div style="align-self:flex-end; background:#0084ff; color:white; padding:10px 15px; border-radius:20px; max-width:70%; display:none;" id="user5_msg">UserPlaceholder</div>
+
+<div style="display:none; align-self:center; color:#555; font-style:italic; margin-top:10px;" id="chatNotice">&nbsp;</div>
+</div>
+
+<div style="padding:10px; border-top:1px solid #ccc; display:flex; align-items:flex-end;"><textarea style="flex:1; padding:10px; border:1px solid #ccc; border-radius:15px; outline:none; font-size:14px; resize:none; height:60px;" placeholder="Type a message..." id="chatInput"></textarea><button style="margin-left:10px; background:#4267B2; color:white; border:none; padding:10px 20px; border-radius:20px; cursor:pointer;" id="submit-btn">Send</button></div>
+</div>

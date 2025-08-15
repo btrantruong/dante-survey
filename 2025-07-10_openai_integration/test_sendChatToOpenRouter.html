@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test sendChatToOpenRouter Function</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #fafafa;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test sendChatToOpenRouter Function</h1>
+        
+        <div class="test-section">
+            <h3>API Configuration</h3>
+            <label for="apiKey">OpenRouter API Key:</label>
+            <input type="text" id="apiKey" placeholder="Enter your OpenRouter API key">
+            <br>
+            <label for="model">Model:</label>
+            <input type="text" id="model" value="openai/gpt-4o-mini" placeholder="Model to use">
+        </div>
+
+        <div class="test-section">
+            <h3>Test Cases</h3>
+            <button onclick="runTest1()">Test 1: Basic Conversation</button>
+            <button onclick="runTest2()">Test 2: Gun Policy Conversation</button>
+            <button onclick="runTest3()">Test 3: Error Handling</button>
+            <button onclick="runCustomTest()">Custom Test</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+
+        <div class="test-section">
+            <h3>Custom Test</h3>
+            <label for="customMessage">Message:</label>
+            <input type="text" id="customMessage" value="Hello, how are you today?" placeholder="Enter your message">
+        </div>
+
+        <div class="test-section">
+            <h3>Test Results</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // Mock Qualtrics environment
+        window.Qualtrics = {
+            SurveyEngine: {
+                getEmbeddedData: function(key) {
+                    const apiKey = document.getElementById('apiKey').value || 'sk-or-test-key';
+                    const model = document.getElementById('model').value || 'openai/gpt-4o-mini';
+                    
+                    const mockData = {
+                        'OpenRouterAPIKey': apiKey,
+                        'setModel': model
+                    };
+                    return mockData[key] || null;
+                }
+            }
+        };
+
+        // Logging function
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `test-result ${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // The sendChatToOpenRouter function (copied from original)
+        function sendChatToOpenRouter(conversationHistory, onSuccess, onError) {
+            var apiKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or-...";
+            var OR_model = Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "openai/gpt-4.1";
+
+            var payload = {
+                "model": OR_model,
+                "messages": conversationHistory,
+                "stream": false
+            };
+
+            log("Sending to OpenRouter: " + JSON.stringify(payload, null, 2));
+
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "https://openrouter.ai/api/v1/chat/completions", true);
+            xhr.setRequestHeader("Authorization", "Bearer " + apiKey);
+            xhr.setRequestHeader("Content-Type", "application/json");
+
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    log("OpenRouter response status: " + xhr.status);
+                    if (xhr.status === 200) {
+                        log("OpenRouter response: " + xhr.responseText);
+                        try {
+                            var data = JSON.parse(xhr.responseText);
+                            log("Parsed data: " + JSON.stringify(data, null, 2));
+                            onSuccess(data.choices[0].message.content);
+                        } catch (err) {
+                            log("Error parsing response: " + err, 'error');
+                            onError("Error parsing response");
+                        }
+                    } else {
+                        log("HTTP Error: " + xhr.status + " - " + xhr.responseText, 'error');
+                        onError("Error: HTTP " + xhr.status);
+                    }
+                }
+            };
+
+            xhr.onerror = function() {
+                log("Network error occurred", 'error');
+                onError("Network error");
+            };
+
+            xhr.send(JSON.stringify(payload));
+        }
+
+        // Test functions
+        function runTest1() {
+            log("=== Test 1: Basic Conversation ===", 'info');
+            const testConversation = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Hello, how are you?"}
+            ];
+
+            sendChatToOpenRouter(
+                testConversation,
+                function(response) {
+                    log("✅ Test 1 SUCCESS - Response received: " + response.substring(0, 100) + "...", 'success');
+                },
+                function(error) {
+                    log("❌ Test 1 FAILED - Error: " + error, 'error');
+                }
+            );
+        }
+
+        function runTest2() {
+            log("=== Test 2: Gun Policy Conversation ===", 'info');
+            const testConversation = [
+                {
+                    "role": "system", 
+                    "content": "You are a chatbot designed to reflect the values and viewpoints typically associated with Republican. You will be having a conversation with a person who is Democrat where you show that some Republican disagree with the participant's stance on gun policy. Present well-reasoned supporting arguments. Maintain respect throughout the conversation and use simple language that an average person can understand. Nudge the participant towards keeping the conversation going by asking questions and making comments that encourage them to share their thoughts. Keep your responses short and concise."
+                },
+                {
+                    "role": "user", 
+                    "content": "On the topic of gun policy, I think that I believe gun policy should be much stricter and we need more comprehensive background checks."
+                }
+            ];
+
+            sendChatToOpenRouter(
+                testConversation,
+                function(response) {
+                    log("✅ Test 2 SUCCESS - Response received: " + response.substring(0, 100) + "...", 'success');
+                },
+                function(error) {
+                    log("❌ Test 2 FAILED - Error: " + error, 'error');
+                }
+            );
+        }
+
+        function runTest3() {
+            log("=== Test 3: Error Handling ===", 'info');
+            
+            // Temporarily override the API key to test error handling
+            const originalGetEmbeddedData = Qualtrics.SurveyEngine.getEmbeddedData;
+            Qualtrics.SurveyEngine.getEmbeddedData = function(key) {
+                if (key === 'OpenRouterAPIKey') {
+                    return 'invalid-key-for-testing';
+                }
+                return originalGetEmbeddedData(key);
+            };
+
+            sendChatToOpenRouter(
+                [{"role": "user", "content": "Test message"}],
+                function(response) {
+                    log("❌ Test 3 FAILED - Should have failed with invalid key", 'error');
+                },
+                function(error) {
+                    log("✅ Test 3 SUCCESS - Error properly handled: " + error, 'success');
+                }
+            );
+
+            // Restore original function
+            Qualtrics.SurveyEngine.getEmbeddedData = originalGetEmbeddedData;
+        }
+
+        function runCustomTest() {
+            log("=== Custom Test ===", 'info');
+            const customMessage = document.getElementById('customMessage').value;
+            const testConversation = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": customMessage}
+            ];
+
+            sendChatToOpenRouter(
+                testConversation,
+                function(response) {
+                    log("✅ Custom Test SUCCESS - Response: " + response, 'success');
+                },
+                function(error) {
+                    log("❌ Custom Test FAILED - Error: " + error, 'error');
+                }
+            );
+        }
+
+        // Initialize
+        log("Test page loaded. Please enter your OpenRouter API key and select a test to run.", 'info');
+    </script>
+</body>
+</html> 

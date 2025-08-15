@@ -13,6 +13,9 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		console.error('Required DOM elements not found');
 		return;
 	}
+	chatInput.addEventListener('paste', function(e) {
+		e.preventDefault();
+	});
 
 	llmDot.style.display = "block";
 	chatInput.disabled = true;
@@ -24,24 +27,50 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	var group = Qualtrics.SurveyEngine.getEmbeddedData('group') || 'Republican';
 	var topic = Qualtrics.SurveyEngine.getEmbeddedData('topic') || 'gun policy';
 
-	console.log('Initial opinion:', initial_opinion);
-	console.log('Party ID:', pid);
-	console.log('Treatment:', treatment);
-	console.log('Group:', group);
-	console.log('Topic:', topic);
-
 	var agreeOrDisagree = (treatment === 'ingroup_agree' || treatment === 'outgroup_agree')
 		? 'agree'
 		: 'disagree';
 
-	var optional_blurb = (treatment === 'outgroup_agree' || treatment === 'ingroup_disagree')
-		? ', even though it is not typical for ' + group + ' to do so. '
-		: '';
+	
+	// var disagree_blurb  = "Even if you don't agree with their viewpoint, try to engage the partner, looking for common ground and ways to work together."
 
-	var system_prompt = 'You are a chatbot designed to reflect the values and viewpoints typically associated with ' + group + '. ' +
-		'You will be having a conversation with a person who is ' + pid + ' where you show that some ' + group + ' ' + agreeOrDisagree + 'with the participant\'s stance on ' + topic + optional_blurb + 
-		'Present well-reasoned supporting arguments. Maintain respect throughout the conversation and use simple language that an average person can understand. ' +
-		'Nudge the participant towards keeping the conversation going by asking questions and making comments that encourage them to share their thoughts. Keep your responses short and concise.';
+	var optional_intro = (treatment === 'outgroup_disagree' || treatment === 'ingroup_disagree')
+		? disagree_blurb
+		: agreement_blurb;
+
+	var disagree_blurb="People often assume that in-group members share similar views, while out-group members hold more extreme and opposing positions."+
+	"In reality, people tend to overestimate how much they agree with in-partisans and underestimate the extent of agreement with out-partisans. For instance, some Democrats support stricter immigration policies, while some Republicans acknowledge human-driven climate change and advocate for responsible measures."+
+	"Change this misperception by engaging with the partner, looking for common ground and ways to work together, even if you don't agree with their viewpoint.";
+	
+	var agreement_blurb = "Comment on the participant's stance, share your relevant point of view, and encourage them to share their thoughts.";
+	// var optional_outro = (treatment === 'outgroup_disagree' || treatment === 'ingroup_disagree')
+	// 	? "and potential disagreement between yours and their stances"
+	// 	: "and potential agreement between yours and their stances";
+
+	var system_prompt = "You are a discussion partner who holds the values and viewpoints typically associated with " + group + ". " +
+		"You will be having a conversation with a person who is " + pid + "." + 
+		"Start the first message by explicitly stating your stance that some " + group + " " + agreeOrDisagree + " with the participant's stance on " + topic + ". " +
+		+ optional_intro +
+		"Keep your responses short and concise. Present well-reasoned supporting arguments. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
+		"If the participant is not willing to engage, do not force them. Just say goodbye and end the conversation." +
+		"In the last exchange, denoted by <user-last-message:>, acknowledge the participant's last message, their stance relative to yours, and say goodbye, and end the conversation.";
+	
+	// Keep all exp conditions in a dictionary for easy access
+	var exp_conditions = 
+	{
+		'pid': pid,
+		'treatment': treatment,
+		'group': group,
+		'topic': topic,
+		'initial_opinion': initial_opinion,
+		'system_prompt': system_prompt,
+	}
+
+	console.log('Initial opinion:', exp_conditions['initial_opinion']);
+	console.log('Party ID:', exp_conditions['pid']);
+	console.log('Treatment:', exp_conditions['treatment']);
+	console.log('Group:', exp_conditions['group']);
+	console.log('Topic:', exp_conditions['topic']);
 
 	// Initialize conversation history with system prompt
 	var conversationHistory = [
@@ -50,10 +79,17 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 	console.log('System prompt:', system_prompt);
 
-	// Send initial message
-	var initialUserMessage = 'Here is my opinion on ' + topic + ': "' + initial_opinion + '"';
-	conversationHistory.push({"role": "user", "content": initialUserMessage});
+	// Track response display and elapsed times
+	var responseTimestamps = {}; // {turnNumber: timestamp}
+	var elapsedTimes = {};       // {turnNumber: elapsedTime}
+	var openRouterResponseTimes = []; // [{responseTime, responseText}]
+	// Track timestamps for each turn
+	var turnTimestamps = {}; // {turnNumber: {requestSent, responseReceived, userStartTyping, userSubmit}}
 
+	// Add initial opinion to conversation history
+	conversationHistory.push({"role": "user", "content": initial_opinion});
+
+	// Now send to OpenRouter and show LLM1_msg when response arrives
 	sendChatToOpenRouter(
 		conversationHistory,
 		function(response) {
@@ -61,11 +97,13 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			llmDot.style.display = "none";
 			document.getElementById("LLM1_msg").innerHTML = response;
 			document.getElementById("LLM1_msg").style.display = "block";
-			Qualtrics.SurveyEngine.setEmbeddedData('llm_response_0', response);
-			
+			Qualtrics.SurveyEngine.setEmbeddedData('llm_response_1', response);
 			// Add LLM response to conversation history
 			conversationHistory.push({"role": "assistant", "content": response});
-			
+			// Record timestamp for response received (turn 1)
+			if (!turnTimestamps[1]) turnTimestamps[1] = {};
+			turnTimestamps[1].responseReceived = Date.now();
+			Qualtrics.SurveyEngine.setEmbeddedData('turn_1_response_received', turnTimestamps[1].responseReceived);
 			chatInput.disabled = false;
 			submitBtn.disabled = true;
 			chatInput.addEventListener('input', handleInputChange);
@@ -81,6 +119,22 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 	function handleInputChange() {
 		submitBtn.disabled = (chatInput.value.trim() === '');
+		// Record timestamp when user starts typing (for current turn)
+		var currentTurn = getCurrentTurn();
+		if (!turnTimestamps[currentTurn]) turnTimestamps[currentTurn] = {};
+		if (!turnTimestamps[currentTurn].userStartTyping) {
+			turnTimestamps[currentTurn].userStartTyping = Date.now();
+			Qualtrics.SurveyEngine.setEmbeddedData('turn_' + currentTurn + '_user_start_typing', turnTimestamps[currentTurn].userStartTyping);
+		}
+	}
+
+	function getCurrentTurn() {
+		var turnNumber = 1;
+		while (document.getElementById('user' + turnNumber + '_msg') &&
+			document.getElementById('user' + turnNumber + '_msg').style.display === 'block') {
+			turnNumber++;
+		}
+		return turnNumber - 1; // Return the current turn (not the next one)
 	}
 
 	submitBtn.onclick = function() {
@@ -92,10 +146,32 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			document.getElementById('user' + turnNumber + '_msg').style.display === 'block') {
 			turnNumber++;
 		}
-		if (turnNumber === 5) {
+		var currentTurn = turnNumber - 1;
+		
+		// Record timestamp when user clicks submit
+		if (!turnTimestamps[currentTurn]) turnTimestamps[currentTurn] = {};
+		turnTimestamps[currentTurn].userSubmit = Date.now();
+		Qualtrics.SurveyEngine.setEmbeddedData('turn_' + currentTurn + '_user_submit', turnTimestamps[currentTurn].userSubmit);
+		
+		console.log('turnTimestamps', turnTimestamps)
+		
+		if (turnNumber === 4) {
 			var warningMsg = "This is your last response. Please click 'Next' to continue.";
 			document.getElementById('chatNotice').innerHTML = "<em>" + warningMsg + "</em>";
 			document.getElementById('chatNotice').style.display = "block";
+			qThis.showNextButton();
+			
+			// Add red message next to the Next button
+			setTimeout(function() {
+				var nextButton = document.querySelector('.NextButton');
+				if (nextButton) {
+					var warningDiv = document.createElement('div');
+					warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Clicking this Next button will end the conversation.</span>';
+					warningDiv.style.display = 'inline-block';
+					warningDiv.style.verticalAlign = 'middle';
+					nextButton.parentNode.insertBefore(warningDiv, nextButton);
+				}
+			}, 100);
 		}
 		console.log('User turn number:', turnNumber);
 		console.log('User message:', message);
@@ -106,7 +182,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 		chatInput.value = '';
 		chat.scrollTop = chat.scrollHeight;
-		LLMTalk(message);
+		LLMTalk(message, currentTurn);
 	};
 
 	function sendChatToOpenRouter(conversationHistory, onSuccess, onError) {
@@ -126,14 +202,34 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		xhr.setRequestHeader("Authorization", "Bearer " + apiKey);
 		xhr.setRequestHeader("Content-Type", "application/json");
 
+		// Record timestamp when request is sent
+		var requestSentTime = Date.now();
+		var currentTurn = getCurrentTurn();
+		if (!turnTimestamps[currentTurn]) turnTimestamps[currentTurn] = {};
+		turnTimestamps[currentTurn].requestSent = requestSentTime;
+		Qualtrics.SurveyEngine.setEmbeddedData('turn_' + currentTurn + '_request_sent', requestSentTime);
+
 		xhr.onreadystatechange = function() {
 			if (xhr.readyState === 4) {
 				console.log("OpenRouter response status:", xhr.status);
 				if (xhr.status === 200) {
+					console.log("OpenRouter response:", xhr.responseText);
 					try {
 						var data = JSON.parse(xhr.responseText);
+						console.log("Parsed data:", data);
+						openRouterResponseTimes.push({
+							responseTime: Date.now() - requestSentTime,
+							responseText: xhr.responseText
+						});
+						// Record timestamp when response is received
+						var responseReceivedTime = Date.now();
+						turnTimestamps[currentTurn].responseReceived = responseReceivedTime;
+						Qualtrics.SurveyEngine.setEmbeddedData('turn_' + currentTurn + '_response_received', responseReceivedTime);
+						console.log('turnTimestamps', turnTimestamps)
+						Qualtrics.SurveyEngine.setEmbeddedData('all_openrouter_response_times', JSON.stringify(openRouterResponseTimes));
 						onSuccess(data.choices[0].message.content);
 					} catch (err) {
+						console.error("Error parsing response:", err);
 						onError("Error parsing response");
 					}
 				} else {
@@ -149,27 +245,20 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		xhr.send(JSON.stringify(payload));
 	}
 
-	function LLMTalk(userMessage) {
+	function LLMTalk(userMessage, currentTurn) {
 		chatInput.disabled = true;
 		submitBtn.disabled = true;
 
 		// Add user message to conversation history
+		if (currentTurn === 4) {
+			userMessage = "<user-last-message:> " + userMessage;
+		}
+
 		conversationHistory.push({"role": "user", "content": userMessage});
 
 		// Check if we've reached the conversation limit (10 messages total + 2 items: system prompt and initial user message)
-		if (conversationHistory.length > 12) {
-			console.log("Conversation limit reached (10 messages).");
-			qThis.showNextButton();
-			
-			// Display conversation limit message
-			var limitMessage = document.createElement('div');
-			limitMessage.innerHTML = "The conversation limit is reached, thank you for participating in the discussion. Please click the Next button to proceed";
-			limitMessage.style.color = "blue";
-			limitMessage.style.textAlign = "center";
-			limitMessage.style.marginTop = "10px";
-			limitMessage.style.fontWeight = "bold";
-			chat.appendChild(limitMessage);
-			
+		if (currentTurn === 4) {
+			console.log("Conversation limit reached (8 messages).");
 			// Store conversation history for analysis
 			var all_interactions = [];
 			for (var i = 1; i < conversationHistory.length; i++) { // Skip system prompt
@@ -202,29 +291,66 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		if (!LLMposition) {
 			console.log("No LLM placeholder found.");
 			qThis.showNextButton();
+			
+			// Add red message next to the Next button
+			setTimeout(function() {
+				var nextButton = document.querySelector('.NextButton');
+				if (nextButton) {
+					var warningDiv = document.createElement('div');
+					warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Clicking this Next button will end the conversation.</span>';
+					warningDiv.style.display = 'inline-block';
+					warningDiv.style.verticalAlign = 'middle';
+					nextButton.parentNode.insertBefore(warningDiv, nextButton);
+				}
+			}, 100);
 			return;
 		}
 
 		var dott_id = LLMposition.split("_")[0] + '_dot';
 		document.getElementById(dott_id).style.display = "block";
 
-		sendChatToOpenRouter(conversationHistory, function(response) {
-			document.getElementById(dott_id).style.display = "none";
-			document.getElementById(LLMposition).innerHTML = response;
-			document.getElementById(LLMposition).style.display = "block";
+		// Determine turn number from LLMposition (e.g., LLM2_msg => 2)
+		var turnNumber = parseInt(LLMposition.replace("LLM", "").replace("_msg", ""));
 
-			// Add LLM response to conversation history
-			conversationHistory.push({"role": "assistant", "content": response});
+		sendChatToOpenRouter(conversationHistory,
+			function(response) {
+				document.getElementById(dott_id).style.display = "none";
+				document.getElementById(LLMposition).innerHTML = response;
+				document.getElementById(LLMposition).style.display = "block";
 
-			var turnNumber = parseInt(LLMposition.replace("LLM", "").replace("_msg", ""));
-			console.log("LLM turn number:", turnNumber);
-			Qualtrics.SurveyEngine.setEmbeddedData('llm_response_' + turnNumber, response);
-			chatInput.disabled = false;
-		}, function(error) {
-			document.getElementById(dott_id).style.display = "none";
-			document.getElementById(LLMposition).innerHTML = error;
-			document.getElementById(LLMposition).style.display = "block";
-			chatInput.disabled = false;
-		});
+				// Add LLM response to conversation history
+				conversationHistory.push({"role": "assistant", "content": response});
+
+				console.log("LLM [" + turnNumber + "]: " + response);
+				Qualtrics.SurveyEngine.setEmbeddedData('llm_response_' + turnNumber, response);
+				
+				// Check if response contains "thank you" and "goodbye"
+				var responseLower = response.toLowerCase();
+				if (responseLower.includes("thank you") && responseLower.includes("goodbye")) {
+					console.log("LLM response contains 'thank you' and 'goodbye' - showing Next button");
+					qThis.showNextButton();
+					
+					// Add red message next to the Next button
+					setTimeout(function() {
+						var nextButton = document.querySelector('.NextButton');
+						if (nextButton) {
+							var warningDiv = document.createElement('div');
+							warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Clicking this Next button will end the conversation.</span>';
+							warningDiv.style.display = 'inline-block';
+							warningDiv.style.verticalAlign = 'middle';
+							nextButton.parentNode.insertBefore(warningDiv, nextButton);
+						}
+					}, 100);
+				}
+				
+				chatInput.disabled = false;
+			}, function(error) {
+				console.error("LLM [" + turnNumber + "] error:" +error);
+				document.getElementById(dott_id).style.display = "none";
+				document.getElementById(LLMposition).innerHTML = error;
+				document.getElementById(LLMposition).style.display = "block";
+				chatInput.disabled = false;
+			}
+		);
 	}
 });
