@@ -21,11 +21,17 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	chatInput.disabled = true;
 	submitBtn.disabled = true;
 
-	var initial_opinion = Qualtrics.SurveyEngine.getEmbeddedData('initial_opinion') || "There should be stricter gun control measures. It's crazy that in the most developed country in the world we still have school shooting.";
-	var pid = Qualtrics.SurveyEngine.getEmbeddedData('pid') || 'Democrat';
-	var treatment = Qualtrics.SurveyEngine.getEmbeddedData('treatment') || 'outgroup_disagree';
-	var group = Qualtrics.SurveyEngine.getEmbeddedData('group') || 'Republican';
-	var topic = Qualtrics.SurveyEngine.getEmbeddedData('topic') || 'gun policy';
+	var initial_opinion = "There should be stricter gun control measures. It's crazy that in the most developed country in the world we still have school shooting.";
+	var pid = 'Democrat';
+	var treatment = 'outgroup_disagree';
+	var group = 'Republican';
+	var topic = 'gun policy'; 
+
+	// var initial_opinion = Qualtrics.SurveyEngine.getEmbeddedData('initial_opinion') || "There should be stricter gun control measures. It's crazy that in the most developed country in the world we still have school shooting.";
+	// var pid = Qualtrics.SurveyEngine.getEmbeddedData('pid') || 'Democrat';
+	// var treatment = Qualtrics.SurveyEngine.getEmbeddedData('treatment') || 'outgroup_disagree';
+	// var group = Qualtrics.SurveyEngine.getEmbeddedData('group') || 'Republican';
+	// var topic = Qualtrics.SurveyEngine.getEmbeddedData('topic') || 'gun policy';
 
 	var stance = treatment.split("_")[1] == "agree" ? "agree" : "disagree";
 
@@ -72,6 +78,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	// Track timestamps for each turn
 	var turnTimestamps = {}; // {turnNumber: {requestSent, responseReceived, userStartTyping, userSubmit}}
 
+	var timeout_threshold = 10000; // 2 minutes
 	// Add initial opinion to conversation history
 	conversationHistory.push({"role": "user", "content": initial_opinion});
 
@@ -179,7 +186,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		LLMTalk(message, currentTurn);
 	};
 
-	function sendChatToOpenRouter(conversationHistory, onSuccess, onError) {
+	async function sendChatToOpenRouter(conversationHistory, onSuccess, onError) {
+		
 		var apiKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or-...";
 		var OR_model = Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "openai/gpt-4.1";
 
@@ -204,8 +212,87 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		turnTimestamps[currentTurn].requestSent = requestSentTime;
 		Qualtrics.SurveyEngine.setEmbeddedData('turn_' + currentTurn + '_request_sent', requestSentTime);
 
+		// Set up 2-minute timeout
+		var timeoutId = setTimeout(function() {
+			console.log("2-minute timeout reached - showing next button");
+			xhr.abort(); // Cancel the request
+			
+			// Show timeout message as centered overlay
+			var timeoutMessage = "Sorry, the response is taking longer than expected. Please click the Next button below to move on to the next section.";
+			
+			// Create timeout overlay
+			var timeoutOverlay = document.createElement('div');
+			timeoutOverlay.id = 'timeout-overlay';
+			timeoutOverlay.style.cssText = `
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				background: rgba(0, 0, 0, 0.5);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				z-index: 1000;
+				border-radius: 10px;
+			`;
+			
+			// Create timeout message container
+			var timeoutContainer = document.createElement('div');
+			timeoutContainer.style.cssText = `
+				background: white;
+				padding: 30px;
+				border-radius: 15px;
+				text-align: center;
+				max-width: 80%;
+				box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+				border: 2px solid #4267B2;
+			`;
+			
+			// Add timeout message
+			timeoutContainer.innerHTML = `
+				<div style="font-size: 16px; font-weight: bold; color: #4267B2; margin-bottom: 15px;">
+				${timeoutMessage}
+				</div>
+			`;
+			
+			timeoutOverlay.appendChild(timeoutContainer);
+			
+			// Add overlay to chat box (not the entire page)
+			chat.appendChild(timeoutOverlay);
+			
+			// Hide any visible loading dots
+			var visibleDots = chat.querySelectorAll('[id$="_dot"]');
+			visibleDots.forEach(function(dot) {
+				if (dot.style.display !== 'none') {
+					dot.style.display = 'none';
+				}
+			});
+			
+			// Enable chat input and show next button
+			chatInput.disabled = false;
+			submitBtn.disabled = true;
+			qThis.showNextButton();
+			
+			// Add red message next to the Next button
+			setTimeout(function() {
+				var nextButton = document.querySelector('.NextButton');
+				if (nextButton) {
+					var warningDiv = document.createElement('div');
+					warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Please move on to the next section where you have the option to retry the conversation.</span>';
+					warningDiv.style.display = 'inline-block';
+					warningDiv.style.verticalAlign = 'middle';
+					nextButton.parentNode.insertBefore(warningDiv, nextButton);
+				}
+			}, 100);
+			
+		}, timeout_threshold); // 2 minutes = 120,000 milliseconds
+		await new Promise(resolve => setTimeout(resolve, timeout_threshold)); // Pause execution for timeout duration
 		xhr.onreadystatechange = function() {
 			if (xhr.readyState === 4) {
+				// Clear the timeout since we got a response
+				clearTimeout(timeoutId);
+				
 				console.log("OpenRouter response status:", xhr.status);
 				if (xhr.status === 200) {
 					// console.log("OpenRouter response:", xhr.responseText);
@@ -235,6 +322,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		};
 
 		xhr.onerror = function() {
+			// Clear the timeout since we got an error
+			clearTimeout(timeoutId);
 			onError("Network error");
 		};
 
