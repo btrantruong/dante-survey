@@ -21,17 +21,11 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	chatInput.disabled = true;
 	submitBtn.disabled = true;
 
-	var initial_opinion = "There should be stricter gun control measures. It's crazy that in the most developed country in the world we still have school shooting.";
-	var pid = 'Democrat';
-	var treatment = 'outgroup_disagree';
-	var group = 'Republican';
-	var topic = 'gun policy'; 
-
-	// var initial_opinion = Qualtrics.SurveyEngine.getEmbeddedData('initial_opinion') || "There should be stricter gun control measures. It's crazy that in the most developed country in the world we still have school shooting.";
-	// var pid = Qualtrics.SurveyEngine.getEmbeddedData('pid') || 'Democrat';
-	// var treatment = Qualtrics.SurveyEngine.getEmbeddedData('treatment') || 'outgroup_disagree';
-	// var group = Qualtrics.SurveyEngine.getEmbeddedData('group') || 'Republican';
-	// var topic = Qualtrics.SurveyEngine.getEmbeddedData('topic') || 'gun policy';
+	var initial_opinion = Qualtrics.SurveyEngine.getEmbeddedData('initial_opinion') || "There should be stricter gun control measures. It's crazy that in the most developed country in the world we still have school shooting.";
+	var pid = Qualtrics.SurveyEngine.getEmbeddedData('pid') || 'Democrat';
+	var treatment = Qualtrics.SurveyEngine.getEmbeddedData('treatment') || 'outgroup_disagree';
+	var group = Qualtrics.SurveyEngine.getEmbeddedData('group') || 'Republican';
+	var topic = Qualtrics.SurveyEngine.getEmbeddedData('topic') || 'gun policy';
 
 	var stance = treatment.split("_")[1] == "agree" ? "agree" : "disagree";
 
@@ -51,7 +45,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         optional_intro + " " +
         "You represent the stance that " + stance + "s with the participant's opinion on " + topic + ". " +
         "Keep your responses short and concise. Present well-reasoned supporting arguments; use concrete examples when appropriate. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
-        "In the last exchange, denoted by <user-last-message:>, acknowledge the participant's last message, their stance relative to yours, and explain that the four exchanges limit is up. Say goodbye, and end the conversation."
+        "In the last exchange, denoted by <user-last-message:>, acknowledge the participant's last message, their stance relative to yours, and explain that time is up for the conversation. Say goodbye."
     );
 	// Keep all exp conditions in a dictionary for easy access
 	var exp_conditions = 
@@ -78,8 +72,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	// Track timestamps for each turn
 	var turnTimestamps = {}; // {turnNumber: {requestSent, responseReceived, userStartTyping, userSubmit}}
 
-	var timeout_threshold = 10000; // 10 seconds
-	var callCount = 0; // Track number of calls to sendChatToOpenRouter
+	var timeout_threshold = 120000; // 2 minutes
 	// Add initial opinion to conversation history
 	conversationHistory.push({"role": "user", "content": initial_opinion});
 
@@ -180,10 +173,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		LLMTalk(message, currentTurn);
 	};
 
-	async function sendChatToOpenRouter(conversationHistory, onSuccess, onError) {
-		callCount++; // Increment call counter
-		
-		
+	function sendChatToOpenRouter(conversationHistory, onSuccess, onError) {
 		var apiKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or-...";
 		var OR_model = Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "openai/gpt-4.1";
 
@@ -261,12 +251,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				}
 			}, 100);
 			
-		}, timeout_threshold); // 10 seconds = 10,000 milliseconds
+		}, timeout_threshold); 
 
-		// Only wait on the second call (callCount === 2)
-		if (callCount === 2) {
-			await new Promise(resolve => setTimeout(resolve, timeout_threshold)); // Pause execution for 10 seconds
-		}
 		xhr.onreadystatechange = function() {
 			if (xhr.readyState === 4) {
 				// Clear the timeout since we got a response
