@@ -58,15 +58,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         document.getElementById('apiStatus').innerText = "Generating summary... Please wait.";
         document.getElementById('apiStatus').style.color = "blue";
 
-        var instructions = "Create a one-sentence summary of the following argument.\n\n" +
-            "- Omit the reasons provided. Just provide a statement (abortion should be legal because it is a right => abortion should be legal)\n" +
-            "- Avoid double-barreled questions (ask about only one issue position and one concept at a time)\n" +
-            "- If the person mentions two or more issues, focus on the first issue mentioned.\n" +
-            "- Stick to what the person says\n" +
-            "- Write it from the first person 'I believe ....'\n" +
-            "- Remove everything after because\n" +
-            "- Keep it brief (under 15 words)\n" +
-            "- Select only one statement (do not return I believe X and Y, only X)\n\n" +
+        var instructions = "Create a one-sentence summary of the following argument. The summary should start with 'I believe' and only retain one clear position about one main issue from the original argument.\n" +
             "Argument: " + userPrompt + "\nSummary:";
         
         sendChatToOpenRouter(
