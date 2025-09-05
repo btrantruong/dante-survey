@@ -72,8 +72,30 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	var openRouterResponseTimes = []; // [{responseTime, responseText}]
 	// Track timestamps for each turn
 	var turnTimestamps = {}; // {turnNumber: {requestSent, responseReceived, userStartTyping, userSubmit}}
+	// Track errors
+	var errorLog = []; // [{timestamp, turn, errorType, errorMessage, context}]
 
 	var timeout_threshold = 120000; // 2 minutes
+	
+	// Helper function to log errors
+	function logError(errorType, errorMessage, turn, context = {}) {
+		var errorEntry = {
+			timestamp: Date.now(),
+			turn: turn,
+			errorType: errorType,
+			errorMessage: errorMessage,
+			context: context
+		};
+		errorLog.push(errorEntry);
+		
+		// Save to Qualtrics embedded data
+		Qualtrics.SurveyEngine.setEmbeddedData('error_log', JSON.stringify(errorLog));
+		Qualtrics.SurveyEngine.setEmbeddedData('error_count', errorLog.length);
+		Qualtrics.SurveyEngine.setEmbeddedData('last_error', JSON.stringify(errorEntry));
+		
+		console.error(`[${errorType}] Turn ${turn}:`, errorMessage, context);
+	}
+	
 	// Add initial opinion to conversation history
 	conversationHistory.push({"role": "user", "content": initial_opinion});
 
@@ -81,7 +103,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	sendChatToOpenRouter(
 		conversationHistory,
 		function(response) {
-			console.log("Current turn (first call of sendChatToOpenRouter):", getCurrentTurn());
+			console.log("Current turn (first call of sendChatToOpenRouter):", 1);
 			console.log("Initial LLM response:", response);
 			llmDot.style.display = "none";
 			document.getElementById("LLM1_msg").innerHTML = response;
@@ -96,7 +118,22 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			chatInput.disabled = false;
 			submitBtn.disabled = true;
 			chatInput.addEventListener('input', handleInputChange);
-		}
+		},
+		function(error) {
+			logError("INITIAL_API_ERROR", error, 1, {
+				apiKey: Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') ? "present" : "missing",
+				model: Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "default",
+				conversationLength: conversationHistory.length
+			});
+			llmDot.style.display = "none";
+			document.getElementById("LLM1_msg").innerHTML = "Sorry, I'm having trouble responding right now. Please try again or click Next to continue.";
+			document.getElementById("LLM1_msg").style.display = "block";
+			chatInput.disabled = false;
+			submitBtn.disabled = true;
+			chatInput.addEventListener('input', handleInputChange);
+			qThis.showNextButton();
+		},
+		true  // isInitialCall = true
 	);
 
 	function handleInputChange() {
@@ -111,6 +148,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	}
 
 	function getCurrentTurn() {
+		// Determine the current turn by counting the number of user messages that are displayed
 		var turnNumber = 1;
 		while (document.getElementById('user' + turnNumber + '_msg') &&
 			document.getElementById('user' + turnNumber + '_msg').style.display === 'block') {
@@ -154,7 +192,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		LLMTalk(message, currentTurn);
 	};
 
-	function sendChatToOpenRouter(conversationHistory, onSuccess, onError) {
+	function sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall = false) {
 		var apiKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or-...";
 		var OR_model = Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "openai/gpt-4.1";
 
@@ -173,14 +211,30 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 		// Record timestamp when request is sent
 		var requestSentTime = Date.now();
-		var currentTurn = getCurrentTurn();
+		var currentTurn;
+		
+		if (isInitialCall) {
+			// For initial call, we know it's turn 1
+			currentTurn = 1;
+		} else {
+			// For subsequent calls, calculate the current turn
+			currentTurn = getCurrentTurn();
+			
+		}
 		console.log("Current turn (subsequent call of sendChatToOpenRouter):", currentTurn);
+
 		if (!turnTimestamps[currentTurn]) turnTimestamps[currentTurn] = {};
 		turnTimestamps[currentTurn].requestSent = requestSentTime;
 		Qualtrics.SurveyEngine.setEmbeddedData('turn_' + currentTurn + '_request_sent', requestSentTime);
 
-		// Set up 2-minute timeout
+		// Error handling timeout: if the response takes longer than 2 minutes, show the next button
 		var timeoutId = setTimeout(function() {
+			logError("API_TIMEOUT", "Request timed out after 2 minutes", currentTurn, {
+				timeoutThreshold: timeout_threshold,
+				requestSentTime: requestSentTime,
+				elapsedTime: Date.now() - requestSentTime,
+				conversationLength: conversationHistory.length
+			});
 			console.log("2-minute timeout reached - showing next button");
 			xhr.abort(); // Cancel the request
 			
@@ -258,10 +312,20 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						onSuccess(data.choices[0].message.content);
 						
 					} catch (err) {
-						console.error("Error parsing response:", err);
+						logError("JSON_PARSE_ERROR", "Error parsing response: " + err.message, currentTurn, {
+							responseText: xhr.responseText.substring(0, 200) + (xhr.responseText.length > 200 ? "..." : ""),
+							status: xhr.status,
+							conversationLength: conversationHistory.length
+						});
 						onError("Error parsing response");
 					}
 				} else {
+					logError("HTTP_ERROR", "HTTP " + xhr.status, currentTurn, {
+						status: xhr.status,
+						statusText: xhr.statusText,
+						responseText: xhr.responseText.substring(0, 200) + (xhr.responseText.length > 200 ? "..." : ""),
+						conversationLength: conversationHistory.length
+					});
 					onError("Error: HTTP " + xhr.status);
 				}
 			}
@@ -270,6 +334,10 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		xhr.onerror = function() {
 			// Clear the timeout since we got an error
 			clearTimeout(timeoutId);
+			logError("NETWORK_ERROR", "Network error occurred", currentTurn, {
+				readyState: xhr.readyState,
+				conversationLength: conversationHistory.length
+			});
 			onError("Network error");
 		};
 
@@ -320,6 +388,11 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		console.log("Next LLM placeholder:", LLMposition);
 		
 		if (!LLMposition) {
+			logError("MISSING_LLM_PLACEHOLDER", "No LLM placeholder found", currentTurn, {
+				interactionsCount: interactions.length,
+				conversationLength: conversationHistory.length,
+				userMessage: userMessage.substring(0, 100) + (userMessage.length > 100 ? "..." : "")
+			});
 			console.log("No LLM placeholder found.");
 			qThis.showNextButton();
 			
@@ -348,7 +421,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				document.getElementById(dott_id).style.display = "none";
 				
 				// If currentTurn == 4, append the blurb in italic
-				if (currentTurn === 2) {
+				if (currentTurn === 3) {
 					response = response + "<br><br><em>Note that our conversation will end after your next reply</em>";
 				}
 				
@@ -379,6 +452,19 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					}, 100);
 				}
 				
+				chatInput.disabled = false;
+			},
+			function(error) {
+				logError("LLM_API_ERROR", error, currentTurn, {
+					llmPosition: LLMposition,
+					conversationLength: conversationHistory.length,
+					userMessage: userMessage.substring(0, 100) + (userMessage.length > 100 ? "..." : ""),
+					apiKey: Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') ? "present" : "missing",
+					model: Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "default"
+				});
+				document.getElementById(dott_id).style.display = "none";
+				document.getElementById(LLMposition).innerHTML = "Sorry, I'm having trouble responding right now. Please try again or click Next to continue.";
+				document.getElementById(LLMposition).style.display = "block";
 				chatInput.disabled = false;
 			}
 		);
