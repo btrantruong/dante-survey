@@ -1,5 +1,27 @@
 Qualtrics.SurveyEngine.addOnReady(function() {
     jQuery("#NextButton").hide();
+    
+    // Track errors for summary block
+    var summaryErrorLog = []; // [{timestamp, errorType, errorMessage, context}]
+    
+    // Helper function to log summary block errors
+    function logSummaryError(errorType, errorMessage, context = {}) {
+        var errorEntry = {
+            timestamp: Date.now(),
+            errorType: errorType,
+            errorMessage: errorMessage,
+            context: context,
+            block: "SUMMARY" // Distinguish from treatment block
+        };
+        summaryErrorLog.push(errorEntry);
+        
+        // Save to Qualtrics embedded data with summary prefix
+        Qualtrics.SurveyEngine.setEmbeddedData('summary_error_log', JSON.stringify(summaryErrorLog));
+        Qualtrics.SurveyEngine.setEmbeddedData('summary_error_count', summaryErrorLog.length);
+        Qualtrics.SurveyEngine.setEmbeddedData('summary_last_error', JSON.stringify(errorEntry));
+        
+        console.error(`[SUMMARY-${errorType}]:`, errorMessage, context);
+    }
 
     function sendChatToOpenRouter(instructions, onSuccess, onError) {
         var apiKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or-...";
@@ -58,15 +80,25 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         document.getElementById('apiStatus').innerText = "Generating summary... Please wait.";
         document.getElementById('apiStatus').style.color = "blue";
 
-        var instructions = "Create a one-sentence summary of the following argument. The summary should start with 'I believe' and only retain one clear position about one main issue from the original argument.\n" +
-            "Argument: " + userPrompt + "\nSummary:";
-        
+        var topic = Qualtrics.SurveyEngine.getEmbeddedData('topic');
+        var instructions = ("<argument:>" + userPrompt + ".\n"+
+        "Infer the stance of the above argument (<argument:>) about the topic of " + topic +". Choose the stance from this list: very conservative, somewhat conservative, slightly conservative, moderate, slightly liberal, somewhat liberal, very liberal. "+
+        "Create a one-sentence summary of the argument. The summary should start with 'I believe' and only express one concept regarding the issue at a time, ignore the rest of the argument if needed. Format the answer as follows:\n"+
+        "<position:>\n"+
+        "<summary:>\n");
+
         sendChatToOpenRouter(
             instructions,
             function(response) {
                 console.log("Instructions:", instructions);
+                console.log('response: ', response)
                 var apiResponse = response;
-                Qualtrics.SurveyEngine.setEmbeddedData('summary', apiResponse);
+                var position = apiResponse.split(" \n<summary:> ")[0].split("<position:> ")[1]
+                var summary = apiResponse.split(" \n<summary:> ")[1]
+                console.log('position: ', position)
+                console.log('summary: ', summary)
+                Qualtrics.SurveyEngine.setEmbeddedData('summary', summary);
+                Qualtrics.SurveyEngine.setEmbeddedData('inital_opinion_leaning', position);
                 document.getElementById('apiStatus').innerText = "Summary generated! You can now proceed.";
                 jQuery("#NextButton").show();
             },
