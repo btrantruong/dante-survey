@@ -45,7 +45,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         optional_intro + " " +
         "You represent the stance that " + stance + "s with the participant's opinion on " + topic + ". " +
         "Keep your responses short and concise. Present well-reasoned supporting arguments; use concrete examples when appropriate. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
-        "In the last exchange, denoted by <user-last-message:>, acknowledge the participant's last message, their stance relative to yours, and explain that time is up for the conversation. Say goodbye."
+        "When (and only when) a user's message is denoted by <user-last-message:>, acknowledging their stance relative to yours, and say goodbye."
     );
 	// Keep all exp conditions in a dictionary for easy access
 	var exp_conditions = 
@@ -81,10 +81,10 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		conversationHistory,
 		function(response) {
 			console.log("Current turn (first call of sendChatToOpenRouter):", getCurrentTurn());
-			if (getCurrentTurn()=== 0) {
+			if (getCurrentTurn()=== 1) {
 				console.log("Adding stance to initial LLM response");
 				response = (
-					"From the viewpoint of many " + group + " , I " + stance + " with you. "
+					"From the viewpoint of many " + group + ", I " + stance + " with you. "
 					+ response
 				)
 			}
@@ -122,7 +122,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			document.getElementById('user' + turnNumber + '_msg').style.display === 'block') {
 			turnNumber++;
 		}
-		return turnNumber - 1; // Return the current turn (not the next one)
+		return turnNumber; // Return the current turn (not the next one)
 	}
 
 	submitBtn.onclick = function() {
@@ -134,7 +134,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			document.getElementById('user' + turnNumber + '_msg').style.display === 'block') {
 			turnNumber++;
 		}
-		var currentTurn = turnNumber - 1;
+		var currentTurn = turnNumber;
 		
 		// Record timestamp when user clicks submit
 		if (!turnTimestamps[currentTurn]) turnTimestamps[currentTurn] = {};
@@ -148,21 +148,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			document.getElementById('chatNotice').innerHTML = "<em>" + warningMsg + "</em>";
 			document.getElementById('chatNotice').style.display = "block";
 			qThis.showNextButton();
-			
-			// Add red message next to the Next button
-			setTimeout(function() {
-				var nextButton = document.querySelector('.NextButton');
-				if (nextButton) {
-					var warningDiv = document.createElement('div');
-					warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Clicking this Next button will end the conversation.</span>';
-					warningDiv.style.display = 'inline-block';
-					warningDiv.style.verticalAlign = 'middle';
-					nextButton.parentNode.insertBefore(warningDiv, nextButton);
-				}
-			}, 100);
 		}
-		console.log('User turn number:', turnNumber);
-		console.log('User message:', message);
+		console.log('User message [' + turnNumber + '] :', message);
 
 		Qualtrics.SurveyEngine.setEmbeddedData('user_response_' + turnNumber, message);
 		document.getElementById('user' + turnNumber + '_msg').innerHTML = message;
@@ -244,7 +231,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				var nextButton = document.querySelector('.NextButton');
 				if (nextButton) {
 					var warningDiv = document.createElement('div');
-					warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Please move on to the next section where you have the option to retry the conversation.</span>';
+					warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Click to move to the next section where you have the option to retry the conversation.</span>';
 					warningDiv.style.display = 'inline-block';
 					warningDiv.style.verticalAlign = 'middle';
 					nextButton.parentNode.insertBefore(warningDiv, nextButton);
@@ -300,7 +287,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		submitBtn.disabled = true;
 
 		// Add user message to conversation history
-		if (currentTurn === 4) {
+		if (currentTurn === 3) {
 			userMessage = "<user-last-message:> " + userMessage;
 		}
 
@@ -347,7 +334,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				var nextButton = document.querySelector('.NextButton');
 				if (nextButton) {
 					var warningDiv = document.createElement('div');
-					warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Clicking this Next button will end the conversation.</span>';
+					warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Click to end the conversation.</span>';
 					warningDiv.style.display = 'inline-block';
 					warningDiv.style.verticalAlign = 'middle';
 					nextButton.parentNode.insertBefore(warningDiv, nextButton);
@@ -365,6 +352,12 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		sendChatToOpenRouter(conversationHistory,
 			function(response) {
 				document.getElementById(dott_id).style.display = "none";
+				
+				// If currentTurn == 4, append the blurb in italic
+				if (currentTurn === 2) {
+					response = response + "<br><br><em>Note that our conversation will end after your next reply</em>";
+				}
+				
 				document.getElementById(LLMposition).innerHTML = response;
 				document.getElementById(LLMposition).style.display = "block";
 
@@ -385,7 +378,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						var nextButton = document.querySelector('.NextButton');
 						if (nextButton) {
 							var warningDiv = document.createElement('div');
-							warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Clicking this Next button will end the conversation.</span>';
+							warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Click to end the conversation.</span>';
 							warningDiv.style.display = 'inline-block';
 							warningDiv.style.verticalAlign = 'middle';
 							nextButton.parentNode.insertBefore(warningDiv, nextButton);
