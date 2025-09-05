@@ -44,6 +44,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         "You will be having a conversation with a person who is " + pid + ". " +
         optional_intro + " " +
         "You represent the stance that " + stance + "s with the participant's opinion on " + topic + ". " +
+		"The first (and only the first) response should start with: 'From the viewpoint of many " + group + "s , I " + stance + " with you.'\n" +
         "Keep your responses short and concise. Present well-reasoned supporting arguments; use concrete examples when appropriate. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
         "When (and only when) a user's message is denoted by <user-last-message:>, acknowledging their stance relative to yours, and say goodbye."
     );
@@ -81,13 +82,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		conversationHistory,
 		function(response) {
 			console.log("Current turn (first call of sendChatToOpenRouter):", getCurrentTurn());
-			if (getCurrentTurn()=== 1) {
-				console.log("Adding stance to initial LLM response");
-				response = (
-					"From the viewpoint of many " + group + ", I " + stance + " with you. "
-					+ response
-				)
-			}
 			console.log("Initial LLM response:", response);
 			llmDot.style.display = "none";
 			document.getElementById("LLM1_msg").innerHTML = response;
@@ -369,8 +363,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				
 				// Check if response contains "thank you" and "goodbye"
 				var responseLower = response.toLowerCase();
-				if (responseLower.includes("thank") && responseLower.includes("goodbye")) {
-					console.log("LLM response contains 'thank you' and 'goodbye' - showing Next button");
+				if (currentTurn >= 1) {
 					qThis.showNextButton();
 					
 					// Add red message next to the Next button
@@ -378,7 +371,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						var nextButton = document.querySelector('.NextButton');
 						if (nextButton) {
 							var warningDiv = document.createElement('div');
-							warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Click to end the conversation.</span>';
+							warningDiv.innerHTML = '<span style="color: red; font-weight: bold; margin-right: 10px;">Click to end the conversation. <em>This action cannot be undone.</em></span>';
 							warningDiv.style.display = 'inline-block';
 							warningDiv.style.verticalAlign = 'middle';
 							nextButton.parentNode.insertBefore(warningDiv, nextButton);
