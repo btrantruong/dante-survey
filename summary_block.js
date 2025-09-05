@@ -41,24 +41,56 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         xhr.open("POST", "https://openrouter.ai/api/v1/chat/completions", true);
         xhr.setRequestHeader("Authorization", "Bearer " + apiKey);
         xhr.setRequestHeader("Content-Type", "application/json");
+        
+        // Record request timestamp for timeout tracking
+        var requestSentTime = Date.now();
+        
+        // Set up timeout (2 minutes)
+        var timeoutId = setTimeout(function() {
+            logSummaryError("API_TIMEOUT", "Summary generation timed out after 2 minutes", {
+                timeoutThreshold: 120000,
+                requestSentTime: requestSentTime,
+                elapsedTime: Date.now() - requestSentTime,
+                instructionsLength: instructions.length
+            });
+            xhr.abort();
+            onError("Request timed out");
+        }, 120000);
 
         xhr.onreadystatechange = function() {
             if (xhr.readyState === 4) {
+                clearTimeout(timeoutId);
                 console.log("OpenRouter response status:", xhr.status);
                 if (xhr.status === 200) {
                     try {
                         var data = JSON.parse(xhr.responseText);
                         onSuccess(data.choices[0].message.content);
                     } catch (err) {
+                        logSummaryError("JSON_PARSE_ERROR", "Error parsing summary response: " + err.message, {
+                            responseText: xhr.responseText,
+                            status: xhr.status,
+                            instructionsLength: instructions.length
+                        });
                         onError("Error parsing response");
                     }
                 } else {
+                    logSummaryError("HTTP_ERROR", "HTTP " + xhr.status, {
+                        status: xhr.status,
+                        statusText: xhr.statusText,
+                        responseText: xhr.responseText,
+                        instructionsLength: instructions.length
+                    });
                     onError("Error: HTTP " + xhr.status);
                 }
             }
         };
 
         xhr.onerror = function() {
+            clearTimeout(timeoutId);
+            logSummaryError("NETWORK_ERROR", "Network error during summary generation", {
+                readyState: xhr.readyState,
+                instructionsLength: instructions.length
+            });
             onError("Network error");
         };
 
@@ -81,7 +113,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         document.getElementById('apiStatus').style.color = "blue";
 
         var topic = Qualtrics.SurveyEngine.getEmbeddedData('topic');
-        var instructions = ("<argument:>" + userPrompt + ".\n"+
+        var instructions = ("<argument:> " + userPrompt + ".\n"+
         "Infer the stance of the above argument (<argument:>) about the topic of " + topic +". Choose the stance from this list: very conservative, somewhat conservative, slightly conservative, moderate, slightly liberal, somewhat liberal, very liberal. "+
         "Create a one-sentence summary of the argument. The summary should start with 'I believe' and only express one concept regarding the issue at a time, ignore the rest of the argument if needed. Format the answer as follows:\n"+
         "<position:>\n"+
@@ -92,17 +124,47 @@ Qualtrics.SurveyEngine.addOnReady(function() {
             function(response) {
                 console.log("Instructions:", instructions);
                 console.log('response: ', response)
-                var apiResponse = response;
-                var position = apiResponse.split(" \n<summary:> ")[0].split("<position:> ")[1]
-                var summary = apiResponse.split(" \n<summary:> ")[1]
-                console.log('position: ', position)
-                console.log('summary: ', summary)
-                Qualtrics.SurveyEngine.setEmbeddedData('summary', summary);
-                Qualtrics.SurveyEngine.setEmbeddedData('inital_opinion_leaning', position);
-                document.getElementById('apiStatus').innerText = "Summary generated! You can now proceed.";
-                jQuery("#NextButton").show();
+                
+                try {
+                    var apiResponse = response;
+                    var position = apiResponse.split(" \n<summary:> ")[0].split("<position:> ")[1];
+                    var summary = apiResponse.split(" \n<summary:> ")[1];
+                    
+                    // Validate response format
+                    if (!position || !summary) {
+                        logSummaryError("RESPONSE_FORMAT_ERROR", "Invalid response format from API", {
+                            response: response.substring(0, 200) + (response.length > 200 ? "..." : ""),
+                            hasPosition: !!position,
+                            hasSummary: !!summary,
+                            instructionsLength: instructions.length
+                        });
+                        throw new Error("Invalid response format");
+                    }
+                    
+                    console.log('position: ', position);
+                    console.log('summary: ', summary);
+                    Qualtrics.SurveyEngine.setEmbeddedData('summary', summary);
+                    Qualtrics.SurveyEngine.setEmbeddedData('inital_opinion_leaning', position);
+                    document.getElementById('apiStatus').innerText = "Summary generated! You can now proceed.";
+                    jQuery("#NextButton").show();
+                } catch (parseError) {
+                    logSummaryError("RESPONSE_PARSE_ERROR", "Error parsing summary response: " + parseError.message, {
+                        response: response.substring(0, 200) + (response.length > 200 ? "..." : ""),
+                        instructionsLength: instructions.length,
+                        userPrompt: userPrompt.substring(0, 100) + (userPrompt.length > 100 ? "..." : "")
+                    });
+                    document.getElementById('apiStatus').innerText = "Error processing summary. Please try again.";
+                    jQuery("#NextButton").show();
+                }
             },
             function(error) {
+                logSummaryError("SUMMARY_API_ERROR", error, {
+                    apiKey: Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') ? "present" : "missing",
+                    model: Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "default",
+                    instructions: instructions,
+                    userPrompt: userPrompt.substring(0, 100) + (userPrompt.length > 100 ? "..." : ""),
+                    topic: topic
+                });
                 console.error(error);
                 document.getElementById('apiStatus').innerText = "Error generating summary. Please try again.";
                 jQuery("#NextButton").show();
