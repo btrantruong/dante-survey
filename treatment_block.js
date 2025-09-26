@@ -371,7 +371,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						
 					} catch (err) {
 						logError("JSON_PARSE_ERROR", "Error parsing response: " + err.message, turnForThisCall, {
-							responseText: xhr.responseText.substring(0, 200) + (xhr.responseText.length > 200 ? "..." : ""),
+							responseText: xhr.responseText,
 							status: xhr.status,
 							conversationLength: conversationHistory.length
 						});
@@ -388,7 +388,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					logError("HTTP_ERROR", "HTTP " + xhr.status, turnForThisCall, {
 						status: xhr.status,
 						statusText: xhr.statusText,
-						responseText: xhr.responseText.substring(0, 200) + (xhr.responseText.length > 200 ? "..." : ""),
+						responseText: xhr.responseText,
 						conversationLength: conversationHistory.length,
 						retryCount: retryCount,
 						currentKeyIndex: currentKeyIndex
@@ -513,7 +513,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				logError("LLM_API_ERROR", error, currentTurn, {
 					llmPosition: LLMposition,
 					conversationLength: conversationHistory.length,
-					userMessage: userMessage.substring(0, 100) + (userMessage.length > 100 ? "..." : ""),
+					userMessage: userMessage,
 					apiKey: Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') ? "present" : "missing",
 					model: Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "default",
 					currentKeyIndex: currentKeyIndex
