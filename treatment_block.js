@@ -422,8 +422,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				rotateToNextKey();
 				sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
 			} else {
-				onError("Network error after 2 retries");
 				Qualtrics.SurveyEngine.setEmbeddedData('network_error_after_two_retries', "true");
+				onError("Network error after 2 retries");
 			}
 		};
 
