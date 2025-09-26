@@ -13,7 +13,6 @@ headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/js
 
 def get_system_prompt(pid, treatment, topic, group):
     stance = "agree" if treatment.split("_")[1] == "agree" else "disagree"
-    disagree_blurb = "Even if you don't agree with their viewpoint, try to engage the partner, looking for common ground and ways to work together."
 
     disagree_blurb = (
         "People often assume that in-group members share similar views, while out-group members hold more extreme and opposing positions."

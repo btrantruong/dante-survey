@@ -78,6 +78,12 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	var currentTurn = 1;
 	// Track if red message has been shown to avoid duplicates
 	var redMessageShown = false;
+	
+	// Key rotation management
+	var currentKeyIndex = 0; // Track which key we're currently using
+	var availableKeys = []; // Will store all available API keys
+	var usedKeys = new Set(); // Track which keys have been used in this session
+	var totalRetryCount = 0; // Track total retries across all attempts
 
 	var timeout_threshold = 120000; // 2 minutes
 	
@@ -98,6 +104,97 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		Qualtrics.SurveyEngine.setEmbeddedData('last_error', JSON.stringify(errorEntry));
 		
 		console.error(`[${errorType}] Turn ${turn}:`, errorMessage, context);
+	}
+	
+	// Initialize available keys
+	function initializeKeys() {
+		var primaryKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or...";
+		var otherKeys = [];
+		for (var i = 1; i <= 2; i++) {
+			var key = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey' + i);
+			if (key) {
+				otherKeys.push(key);
+			}
+		}
+		availableKeys = [primaryKey, ...otherKeys].filter(key => key && key !== "sk-or...");
+		console.log("Initialized with", availableKeys.length, "API keys");
+		console.log("Available keys:", availableKeys);
+	}
+	
+	// Get next available key
+	function getNextKey() {
+		if (availableKeys.length === 0) {
+			initializeKeys();
+		}
+		
+		// Find next unused key
+		for (var i = 0; i < availableKeys.length; i++) {
+			var keyIndex = (currentKeyIndex + i) % availableKeys.length;
+			var key = availableKeys[keyIndex];
+			if (!usedKeys.has(key)) {
+				currentKeyIndex = keyIndex;
+				usedKeys.add(key);
+				console.log("Using API key at index", keyIndex);
+				return key;
+			}
+		}
+		
+		// If all keys used, reset and use first key
+		console.log("All keys used, resetting to first key");
+		usedKeys.clear();
+		currentKeyIndex = 0;
+		usedKeys.add(availableKeys[0]);
+		return availableKeys[0];
+	}
+	
+	// Mark current key as failed and get next key
+	function rotateToNextKey() {
+		if (availableKeys.length > 1) {
+			currentKeyIndex = (currentKeyIndex + 1) % availableKeys.length;
+			console.log("Rotated to key index", currentKeyIndex);
+		}
+	}
+	
+	// Show exhaustion message and enable Next button
+	function showExhaustionMessage() {
+		var timeoutMessage = "We are facing some trouble with the chatbot right now. Please click Next and retry again in a few minutes. If the problem persists, please contact us at gciampag+chat@umd.edu. Thank you for the patience!";
+		
+		// Find the current LLM position to show the timeout message
+		var LLMposition = "";
+		var interactions = chat.querySelectorAll("div");
+		for (var i = 0; i < interactions.length; i++) {
+			var node = interactions[i];
+			if (!node.id || node.id.endsWith("dot")) continue;
+			if (node.innerHTML.trim() === 'LLMPlaceholder') {
+				LLMposition = node.id;
+				break;
+			}
+		}
+		
+		if (LLMposition) {
+			// Hide the loading dot
+			var dott_id = LLMposition.split("_")[0] + '_dot';
+			var dotElement = document.getElementById(dott_id);
+			if (dotElement) {
+				dotElement.style.display = "none";
+			}
+			
+			// Show exhaustion message as regular LLM message
+			var llmElement = document.getElementById(LLMposition);
+			if (llmElement) {
+				llmElement.innerHTML = timeoutMessage;
+				llmElement.style.color = "red";
+				llmElement.style.display = "block";
+			}
+		}
+		
+		// Enable chat input and show next button
+		chatInput.disabled = false;
+		submitBtn.disabled = true;
+		qThis.showNextButton();
+
+		Qualtrics.SurveyEngine.setEmbeddedData('treatment_passed', "false");
+        console.log("Variable `treatment_passed`: ", Qualtrics.SurveyEngine.getEmbeddedData('treatment_passed'));
 	}
 	
 	// Add initial opinion to conversation history
@@ -127,15 +224,11 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			logError("INITIAL_API_ERROR", error, 1, {
 				apiKey: Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') ? "present" : "missing",
 				model: Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "default",
-				conversationLength: conversationHistory.length
+				conversationLength: conversationHistory.length,
+				currentKeyIndex: currentKeyIndex
 			});
-			llmDot.style.display = "none";
-			document.getElementById("LLM1_msg").innerHTML = "Sorry, I'm having trouble responding right now. Please try again or click Next to continue.";
-			document.getElementById("LLM1_msg").style.display = "block";
-			chatInput.disabled = false;
-			submitBtn.disabled = true;
-			chatInput.addEventListener('input', handleInputChange);
-			qThis.showNextButton();
+			showExhaustionMessage();
+			
 		},
 		true  // isInitialCall = true
 	);
@@ -159,6 +252,12 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	submitBtn.onclick = function() {
 		var message = chatInput.value.trim();
 		if (!message) return;
+		
+		// Check if we've exceeded max retries
+		if (totalRetryCount >= 2) {
+			showExhaustionMessage();
+			return;
+		}
 
 		// Increment turn for this user submission
 		currentTurn++;
@@ -182,8 +281,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		LLMTalk(message, currentTurn);
 	};
 
-	function sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall = false) {
-		var apiKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or-...";
+	function sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall = false, retryCount = 0) {
+		var apiKey = getNextKey();
 		var OR_model = Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "openai/gpt-4.1";
 
 		var payload = {
@@ -192,7 +291,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			"stream": false
 		};
 
-		console.log("Sending to OpenRouter:", payload);
+		console.log("Sending to OpenRouter with key index", currentKeyIndex, "retry count:", retryCount, "total retries:", totalRetryCount, ":", payload);
 
 		var xhr = new XMLHttpRequest();
 		xhr.open("POST", "https://openrouter.ai/api/v1/chat/completions", true);
@@ -217,58 +316,21 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				timeoutThreshold: timeout_threshold,
 				requestSentTime: requestSentTime,
 				elapsedTime: Date.now() - requestSentTime,
-				conversationLength: conversationHistory.length
+				conversationLength: conversationHistory.length,
+				retryCount: retryCount,
+				currentKeyIndex: currentKeyIndex
 			});
-			console.log("2-minute timeout reached - showing next button");
+			console.log("2-minute timeout reached");
 			xhr.abort(); // Cancel the request
 			
-			// Show timeout message as regular LLM message
-			var timeoutMessage = "Sorry, the response is taking longer than expected. Please click the Next button below to move on to the next section.";
-			
-			// Find the current LLM position to show the timeout message
-			var LLMposition = "";
-			var interactions = chat.querySelectorAll("div");
-			for (var i = 0; i < interactions.length; i++) {
-				var node = interactions[i];
-				if (!node.id || node.id.endsWith("dot")) continue;
-				if (node.innerHTML.trim() === 'LLMPlaceholder') {
-					LLMposition = node.id;
-					break;
-				}
+			// Try with next key if we haven't reached max retries (2)
+			if (retryCount < 2) {
+				console.log("Timeout occurred, trying with next API key...");
+				rotateToNextKey();
+				sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
+			} else {
+				showExhaustionMessage();
 			}
-			console.log("LLMposition", LLMposition);
-			if (LLMposition) {
-				// Hide the loading dot
-				var dott_id = LLMposition.split("_")[0] + '_dot';
-				var dotElement = document.getElementById(dott_id);
-				if (dotElement) {
-					dotElement.style.display = "none";
-				}
-				
-				// Show timeout message as regular LLM message
-				var llmElement = document.getElementById(LLMposition);
-				if (llmElement) {
-					llmElement.innerHTML = timeoutMessage;
-					llmElement.style.display = "block";
-				}
-			}
-			
-			// Enable chat input and show next button
-			chatInput.disabled = false;
-			submitBtn.disabled = true;
-			qThis.showNextButton();
-			
-			// Add red message next to the Next button
-			setTimeout(function() {
-				var nextButton = document.querySelector('.NextButton');
-				if (nextButton) {
-					var warningDiv = document.createElement('div');
-					warningDiv.innerHTML = '<span style="color: red; margin-right: 10px;">Click to move to the next section where you have the option to retry the conversation.</span>';
-					warningDiv.style.display = 'inline-block';
-					warningDiv.style.verticalAlign = 'middle';
-					nextButton.parentNode.insertBefore(warningDiv, nextButton);
-				}
-			}, 100);
 			
 		}, timeout_threshold); 
 
@@ -308,9 +370,21 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						status: xhr.status,
 						statusText: xhr.statusText,
 						responseText: xhr.responseText.substring(0, 200) + (xhr.responseText.length > 200 ? "..." : ""),
-						conversationLength: conversationHistory.length
+						conversationLength: conversationHistory.length,
+						retryCount: retryCount,
+						currentKeyIndex: currentKeyIndex
 					});
-					onError("Error: HTTP " + xhr.status);
+					// TO-DO: Log errors when the request cannot be sent to OpenRouter
+					// TO-DO: Look into Js way of recognizing non-successul status codes that doesn't simply brute force statuses !=200 and include more than the ones below
+					
+					// Try with next key for certain HTTP errors
+					if ((xhr.status === 401 || xhr.status === 403 || xhr.status >= 500) && retryCount < 2) {
+						console.log("HTTP error occurred, trying with next API key...");
+						rotateToNextKey();
+						sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
+					} else {
+						onError("Error: HTTP " + xhr.status);
+					}
 				}
 			}
 		};
@@ -320,9 +394,19 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			clearTimeout(timeoutId);
 			logError("NETWORK_ERROR", "Network error occurred", turnForThisCall, {
 				readyState: xhr.readyState,
-				conversationLength: conversationHistory.length
+				conversationLength: conversationHistory.length,
+				retryCount: retryCount,
+				currentKeyIndex: currentKeyIndex
 			});
-			onError("Network error");
+			
+			// Try with next key for network errors
+			if (retryCount < 2) {
+				console.log("Network error occurred, trying with next API key...");
+				rotateToNextKey();
+				sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
+			} else {
+				onError("Network error after 2 retries");
+			}
 		};
 
 		xhr.send(JSON.stringify(payload));
@@ -413,12 +497,10 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					conversationLength: conversationHistory.length,
 					userMessage: userMessage.substring(0, 100) + (userMessage.length > 100 ? "..." : ""),
 					apiKey: Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') ? "present" : "missing",
-					model: Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "default"
+					model: Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "default",
+					currentKeyIndex: currentKeyIndex
 				});
-				document.getElementById(dott_id).style.display = "none";
-				document.getElementById(LLMposition).innerHTML = "Sorry, I'm having trouble responding right now. Please try again or click Next to continue.";
-				document.getElementById(LLMposition).style.display = "block";
-				chatInput.disabled = false;
+				showExhaustionMessage();
 			}
 		);
 
