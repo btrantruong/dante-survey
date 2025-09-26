@@ -35,7 +35,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         "Change this misperception by engaging with the partner, even if you don't agree with their viewpoint."
     );
     
-    var agreement_blurb = "Comment on the participant's stance, share your relevant point of view, and encourage them to share their thoughts.";
+    var agreement_blurb = "Respond to the participant's stance by affirming it and sharing your relevant point of view.";
 
     var optional_intro = treatment.split("_")[1] == "disagree" ? disagree_blurb : agreement_blurb;
     
@@ -44,10 +44,12 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         "You will be having a conversation with a person who is " + pid + ". " +
         optional_intro + " " +
         "You represent the stance that " + stance + "s with the participant's opinion on " + topic + ". " +
-		"The first (and only the first) response should start with: 'From the viewpoint of many " + group + "s , I " + stance + " with you.'\n" +
         "Keep your responses short and concise. Present well-reasoned supporting arguments; use concrete examples when appropriate. Maintain respect throughout the conversation and use simple language that an average person can understand. " +
-        "Keep the discussion ongoing; do not say goodbye unless explicitly instructed. Only say goodbye and acknowledge the user’s stance if the message is marked with <user-last-message:>."
+        "Have a natural discussion; do not say goodbye unless explicitly instructed. Only say goodbye and acknowledge the user's stance if the message is marked with <user-last-message:>."
     );
+
+	var initial_system_prompt = (system_prompt + "The first (and only the first) response should start with: 'From the viewpoint of many " + group + "s , I " + stance + " with you.'")
+
 	// Keep all exp conditions in a dictionary for easy access
 	var exp_conditions = 
 	{
@@ -61,9 +63,9 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 	console.log('Experiment conditions:', exp_conditions);
 
-	// Initialize conversation history with system prompt
+	// Initialize conversation history with initial system prompt (for first turn only)
 	var conversationHistory = [
-		{"role": "system", "content": system_prompt}
+		{"role": "system", "content": initial_system_prompt}
 	];
 
 	// console.log('System prompt:', system_prompt);
@@ -150,6 +152,10 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	// Mark current key as failed and get next key
 	function rotateToNextKey() {
 		if (availableKeys.length > 1) {
+			// wait two seconds before moving to the next key
+			setTimeout(function() {
+				console.log('2 second has passed');
+			  }, 2000);
 			currentKeyIndex = (currentKeyIndex + 1) % availableKeys.length;
 			console.log("Rotated to key index", currentKeyIndex);
 		}
@@ -157,7 +163,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	
 	// Show exhaustion message and enable Next button
 	function showExhaustionMessage() {
-		var timeoutMessage = "We are facing some trouble with the chatbot right now. Please click Next and retry again in a few minutes. If the problem persists, please contact us at gciampag+chat@umd.edu. Thank you for the patience!";
+		var timeoutMessage = "We are facing some trouble with the chatbot right now. Please retry in a few moments by typing your message and clicking the Send button. If the problem persists, please contact us at gciampag+chat@umd.edu. Thank you for the patience!";
 		
 		// Find the current LLM position to show the timeout message
 		var LLMposition = "";
@@ -285,9 +291,15 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		var apiKey = getNextKey();
 		var OR_model = Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "openai/gpt-4.1";
 
+		// For non-initial calls, replace the system prompt with the regular one
+		var messagesToSend = conversationHistory.slice(); // Create a copy
+		if (!isInitialCall && messagesToSend.length > 0 && messagesToSend[0].role === "system") {
+			messagesToSend[0].content = system_prompt;
+		}
+
 		var payload = {
 			"model": OR_model,
-			"messages": conversationHistory,
+			"messages": messagesToSend,
 			"stream": false
 		};
 
@@ -363,7 +375,14 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 							status: xhr.status,
 							conversationLength: conversationHistory.length
 						});
-						onError("Error parsing response");
+						// Simple retry on JSON parse errors
+						if (retryCount < 2) {
+							console.log("JSON parse error, retrying with next API key...");
+							rotateToNextKey();
+							return sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
+						} else {
+							onError("Error parsing response");
+						}
 					}
 				} else {
 					logError("HTTP_ERROR", "HTTP " + xhr.status, turnForThisCall, {
@@ -374,11 +393,9 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						retryCount: retryCount,
 						currentKeyIndex: currentKeyIndex
 					});
-					// TO-DO: Log errors when the request cannot be sent to OpenRouter
-					// TO-DO: Look into Js way of recognizing non-successul status codes that doesn't simply brute force statuses !=200 and include more than the ones below
 					
 					// Try with next key for certain HTTP errors
-					if ((xhr.status === 401 || xhr.status === 403 || xhr.status >= 500) && retryCount < 2) {
+					if ((xhr.status === 0 || xhr.status === 401 || xhr.status === 403 || xhr.status >= 500) && retryCount < 2) {
 						console.log("HTTP error occurred, trying with next API key...");
 						rotateToNextKey();
 						sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
@@ -406,6 +423,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
 			} else {
 				onError("Network error after 2 retries");
+				Qualtrics.SurveyEngine.setEmbeddedData('network_error_after_two_retries', "true");
 			}
 		};
 
@@ -451,7 +469,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				
 				// If currentTurn == 3, append the blurb in italic
 				if (currentTurn === 3) {
-					response = response + "<br><br><em>Note that our conversation will end after your next reply</em>";
+					response = response + "<br><br><em>Note that our conversation will end after your next reply.</em>";
 				}
 				
 				document.getElementById(LLMposition).innerHTML = response;
@@ -480,7 +498,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 							var nextButton = document.querySelector('.NextButton');
 							if (nextButton) {
 								var warningDiv = document.createElement('div');
-								warningDiv.innerHTML = '<span style="color: red; margin-right: 10px;">Click to end the conversation. <em>This action cannot be undone.</em></span>';
+								warningDiv.innerHTML = '<span style="color: red; margin-right: 10px;">If you are not finished, we encourage you to continue the conversation. However, if you would like to exit, you can click the Next button. <em>This action cannot be undone.</em></span>';
 								warningDiv.style.display = 'inline-block';
 								warningDiv.style.verticalAlign = 'middle';
 								nextButton.parentNode.insertBefore(warningDiv, nextButton);
