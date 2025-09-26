@@ -245,7 +245,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
                     // Validate response format
                     if (!position || !summary) {
                         logSummaryError("RESPONSE_FORMAT_ERROR", "Invalid response format from API", {
-                            response: response.substring(0, 200) + (response.length > 200 ? "..." : ""),
+                            response: response,
                             hasPosition: !!position,
                             hasSummary: !!summary,
                             instructionsLength: instructions.length
@@ -261,9 +261,9 @@ Qualtrics.SurveyEngine.addOnReady(function() {
                     jQuery("#NextButton").show();
                 } catch (parseError) {
                     logSummaryError("RESPONSE_PARSE_ERROR", "Error parsing summary response: " + parseError.message, {
-                        response: response.substring(0, 200) + (response.length > 200 ? "..." : ""),
+                        response: response,
                         instructionsLength: instructions.length,
-                        userPrompt: userPrompt.substring(0, 100) + (userPrompt.length > 100 ? "..." : ""),
+                        userPrompt: userPrompt,
                         currentKeyIndex: currentKeyIndex
                     });
                     showExhaustionMessage();
@@ -274,7 +274,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
                     apiKey: Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') ? "present" : "missing",
                     model: Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "default",
                     instructions: instructions,
-                    userPrompt: userPrompt.substring(0, 100) + (userPrompt.length > 100 ? "..." : ""),
+                    userPrompt: userPrompt,
                     topic: topic,
                     currentKeyIndex: currentKeyIndex
                 });
