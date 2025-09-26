@@ -370,19 +370,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						onSuccess(data.choices[0].message.content);
 						
 					} catch (err) {
-						logError("JSON_PARSE_ERROR", "Error parsing response: " + err.message, turnForThisCall, {
-							responseText: xhr.responseText,
-							status: xhr.status,
-							conversationLength: conversationHistory.length
-						});
-						// Simple retry on JSON parse errors
-						if (retryCount < 2) {
-							console.log("JSON parse error, retrying with next API key...");
-							rotateToNextKey();
-							return sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
-						} else {
-							onError("Error parsing response");
-						}
+						onError("Error parsing response");
 					}
 				} else {
 					logError("HTTP_ERROR", "HTTP " + xhr.status, turnForThisCall, {
