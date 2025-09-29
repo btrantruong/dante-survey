@@ -152,10 +152,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	// Mark current key as failed and get next key
 	function rotateToNextKey() {
 		if (availableKeys.length > 1) {
-			// wait two seconds before moving to the next key
-			setTimeout(function() {
-				console.log('2 second has passed');
-			  }, 2000);
 			currentKeyIndex = (currentKeyIndex + 1) % availableKeys.length;
 			console.log("Rotated to key index", currentKeyIndex);
 		}
@@ -178,14 +174,14 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		}
 		
 		if (LLMposition) {
-			// Hide the loading dot
+            // Hide the loading dot
 			var dott_id = LLMposition.split("_")[0] + '_dot';
 			var dotElement = document.getElementById(dott_id);
 			if (dotElement) {
 				dotElement.style.display = "none";
 			}
 			
-			// Show exhaustion message as regular LLM message
+            // Show exhaustion message as regular LLM message
 			var llmElement = document.getElementById(LLMposition);
 			if (llmElement) {
 				llmElement.innerHTML = timeoutMessage;
@@ -202,7 +198,35 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		Qualtrics.SurveyEngine.setEmbeddedData('treatment_passed', "false");
         console.log("Variable `treatment_passed`: ", Qualtrics.SurveyEngine.getEmbeddedData('treatment_passed'));
 	}
-	
+
+	// === NEW: Safe render helper (retry until node exists, then render) ===
+	function renderWithRetry(getNode, renderFn, maxTries = 10, delayMs = 100) {
+	  let tries = 0;
+	  (function tick() {
+		console.log(`⏳ renderWithRetry: Attempt ${tries + 1}/${maxTries} - checking for element...`);
+	    const node = getNode();
+	    if (node) {
+		  console.log(`✅ renderWithRetry SUCCESS: Found element after ${tries} tries (${tries * delayMs}ms)`);
+	      try { renderFn(node); 
+				console.log('✅ renderWithRetry: Render function completed successfully');
+		  } 
+	      catch (e) { console.error('Render function failed:', e); }
+	      return;
+	    }
+	    if (++tries >= maxTries) {
+	      console.error('Critical DOM element not found after retries. Element getter:', getNode.toString());
+	      // Log this as a critical error for debugging
+	      logError("DOM_ELEMENT_NOT_FOUND_CRITICAL", "Target element never appeared after " + maxTries + " retries", getCurrentTurn(), {
+	        elementGetter: getNode.toString(),
+	        context: "renderWithRetry fallback"
+	      });
+	      return;
+	    }
+	    setTimeout(tick, delayMs);
+	  })();
+	}
+	// =====================================================================
+
 	// Add initial opinion to conversation history
 	conversationHistory.push({"role": "user", "content": initial_opinion});
 
@@ -212,9 +236,22 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		function(response) {
 			console.log("Current turn (first call of sendChatToOpenRouter):", 1);
 			console.log("Initial LLM response:", response);
-			llmDot.style.display = "none";
-			document.getElementById("LLM1_msg").innerHTML = response;
-			document.getElementById("LLM1_msg").style.display = "block";
+
+			// Hide initial dot safely
+			renderWithRetry(
+			  () => document.getElementById("LLM1_dot"),
+			  (el) => { el.style.display = "none"; }
+			);
+
+			// Render initial LLM message safely
+			renderWithRetry(
+			  () => document.getElementById("LLM1_msg"),
+			  (el) => {
+			    el.innerHTML = response;
+			    el.style.display = "block";
+			  }
+			);
+
 			Qualtrics.SurveyEngine.setEmbeddedData('llm_response_1', response);
 			// Add LLM response to conversation history
 			conversationHistory.push({"role": "assistant", "content": response});
@@ -275,12 +312,20 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		
 		console.log('turnTimestamps', turnTimestamps)
 		
-	
 		console.log('User message [' + currentTurn + '] :', message);
-		console.log('Displayinh user message in '+'user' + currentTurn + '_msg')
+		console.log('Displaying user message in '+'user' + currentTurn + '_msg')
 		Qualtrics.SurveyEngine.setEmbeddedData('user_response_' + currentTurn, message);
-		document.getElementById('user' + currentTurn + '_msg').innerHTML = message;
-		document.getElementById('user' + currentTurn + '_msg').style.display = "block";
+	
+		var userElement = document.getElementById('user' + currentTurn + '_msg');
+		if (userElement) {
+			userElement.innerHTML = message;
+			userElement.style.display = "block";
+		} else {
+			logError("DOM_ELEMENT_NOT_FOUND", "Could not find user" + currentTurn + "_msg element", currentTurn, {
+				elementId: 'user' + currentTurn + '_msg',
+				context: "user message display"
+			});
+		}
 
 		chatInput.value = '';
 		chat.scrollTop = chat.scrollHeight;
@@ -339,6 +384,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			if (retryCount < 2) {
 				console.log("Timeout occurred, trying with next API key...");
 				rotateToNextKey();
+				totalRetryCount++;
 				sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
 			} else {
 				showExhaustionMessage();
@@ -353,7 +399,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				
 				console.log("OpenRouter response status:", xhr.status);
 				if (xhr.status === 200) {
-					// console.log("OpenRouter response:", xhr.responseText);
 					try {
 						var data = JSON.parse(xhr.responseText);
 						console.log("Parsed data:", data);
@@ -367,7 +412,21 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						Qualtrics.SurveyEngine.setEmbeddedData('turn_' + turnForThisCall + '_response_received', responseReceivedTime);
 						console.log('turnTimestamps', turnTimestamps)
 						Qualtrics.SurveyEngine.setEmbeddedData('all_openrouter_response_times', JSON.stringify(openRouterResponseTimes));
-						onSuccess(data.choices[0].message.content);
+						
+						// Call onSuccess (DOM work happens there). If it throws, it's a DOM issue; do NOT rotate keys — retry rendering instead.
+						try {
+							onSuccess(data.choices[0].message.content);
+						} catch (domErr) {
+							logError("DOM_ERROR_IN_SUCCESS", "DOM error while displaying response", turnForThisCall, {
+								responseContent: data.choices[0].message.content,
+								domError: domErr.message,
+								conversationLength: conversationHistory.length,
+								retryCount: retryCount,
+								currentKeyIndex: currentKeyIndex
+							});
+							// Hand back to onError to show exhaustion or custom handling, but no key rotation.
+							onError("DOM error while displaying response");
+						}
 						
 					} catch (err) {
 						logError("JSON_PARSE_ERROR", "Error parsing response: " + err.message, turnForThisCall, {
@@ -376,7 +435,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 							conversationLength: conversationHistory.length
 						});
 						onError("Error parsing response");
-					}
+						}
 				} else {
 					logError("HTTP_ERROR", "HTTP " + xhr.status, turnForThisCall, {
 						status: xhr.status,
@@ -391,6 +450,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					if ((xhr.status === 0 || xhr.status === 401 || xhr.status === 403 || xhr.status >= 500) && retryCount < 2) {
 						console.log("HTTP error occurred, trying with next API key...");
 						rotateToNextKey();
+						totalRetryCount++;
 						sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
 					} else {
 						onError("Error: HTTP " + xhr.status);
@@ -413,6 +473,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			if (retryCount < 2) {
 				console.log("Network error occurred, trying with next API key...");
 				rotateToNextKey();
+				totalRetryCount++;
 				sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount + 1);
 			} else {
 				Qualtrics.SurveyEngine.setEmbeddedData('network_error_after_two_retries', "true");
@@ -434,7 +495,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 		conversationHistory.push({"role": "user", "content": userMessage});
 
-		
 		var LLMposition = "";
 		var interactions = chat.querySelectorAll("div");
 
@@ -453,20 +513,33 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		var dott_id = LLMposition.split("_")[0] + '_dot';
 		document.getElementById(dott_id).style.display = "block";
 
+
 		// Determine turn number from LLMposition (e.g., LLM2_msg => 2)
 		var turnNumber = parseInt(LLMposition.replace("LLM", "").replace("_msg", ""));
 
 		sendChatToOpenRouter(conversationHistory,
 			function(response) {
-				document.getElementById(dott_id).style.display = "none";
+
+				// Hide loading dot safely
+				renderWithRetry(
+				  () => document.getElementById(dott_id),
+				  (dot) => { dot.style.display = "none"; }
+				);
 				
 				// If currentTurn == 3, append the blurb in italic
+				let out = response;
 				if (currentTurn === 3) {
-					response = response + "<br><br><em>Note that our conversation will end after your next reply.</em>";
+					out = response + "<br><br><em>Note that our conversation will end after your next reply.</em>";
 				}
-				
-				document.getElementById(LLMposition).innerHTML = response;
-				document.getElementById(LLMposition).style.display = "block";
+
+				// Render LLM response safely
+				renderWithRetry(
+				  () => document.getElementById(LLMposition),
+				  (llmEl) => {
+				    llmEl.innerHTML = out;
+				    llmEl.style.display = "block";
+				  }
+				);
 
 				// Add LLM response to conversation history
 				conversationHistory.push({"role": "assistant", "content": response});
@@ -477,8 +550,14 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				// Show warning message after LLM response for turn 4
 				if (currentTurn === 4) {
 					var warningMsg = "That was the last response. Please click 'Next' to continue.";
-					document.getElementById('chatNotice').innerHTML = "<em>" + warningMsg + "</em>";
-					document.getElementById('chatNotice').style.display = "block";
+
+					renderWithRetry(
+					  () => document.getElementById('chatNotice'),
+					  (el) => {
+					    el.innerHTML = "<em>" + warningMsg + "</em>";
+					    el.style.display = "block";
+					  }
+					);
 				}
 				
 				if (currentTurn >= 1) {
@@ -503,7 +582,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				chatInput.disabled = false;
 			},
 			function(error) {
-				logError("LLM_API_ERROR", error, currentTurn, {
+				logError("EXHAUSTION ERROR", error, currentTurn, {
 					llmPosition: LLMposition,
 					conversationLength: conversationHistory.length,
 					userMessage: userMessage,
