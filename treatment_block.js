@@ -264,6 +264,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			if (!turnTimestamps[1]) turnTimestamps[1] = {};
 			turnTimestamps[1].responseReceived = Date.now();
 			Qualtrics.SurveyEngine.setEmbeddedData('turn_1_response_received', turnTimestamps[1].responseReceived);
+			var chatInput = document.getElementById('chatInput');
+			var submitBtn = document.getElementById('submit-btn');
 			chatInput.disabled = false;
 			submitBtn.disabled = true;
 			chatInput.addEventListener('input', handleInputChange);
