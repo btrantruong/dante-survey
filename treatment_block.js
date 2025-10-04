@@ -200,7 +200,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	}
 
 	// === NEW: Safe render helper (retry until node exists, then render) ===
-	function renderWithRetry(getNode, renderFn, maxTries = 10, delayMs = 100) {
+	function renderWithRetry(getNode, renderFn, fallbackFn, maxTries = 10, delayMs = 100) {
 	  let tries = 0;
 	  (function tick() {
 		console.log(`⏳ renderWithRetry: Attempt ${tries + 1}/${maxTries} - checking for element...`);
@@ -215,6 +215,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				elementGetter: getNode.toString(),
 				context: "renderWithRetry renderFn"
 			});
+			fallbackFn();
 		  }
 	      return;
 	    }
@@ -225,6 +226,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	        elementGetter: getNode.toString(),
 	        context: "renderWithRetry fallback"
 	      });
+	      fallbackFn();
 	      return;
 	    }
 	    setTimeout(tick, delayMs);
@@ -245,7 +247,14 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			// Hide initial dot safely
 			renderWithRetry(
 			  () => document.getElementById("LLM1_dot"),
-			  (el) => { el.style.display = "none"; }
+			  (el) => { el.style.display = "none"; },
+			  () => {
+			  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "LLM1_dot was not found", getCurrentTurn(), {
+	        		elementGetter: "LLM1_dot",
+	        		context: "renderWithRetry fallback function"
+	      		});
+	      		return;
+			  }
 			);
 
 			// Render initial LLM message safely
@@ -254,6 +263,13 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			  (el) => {
 			    el.innerHTML = response;
 			    el.style.display = "block";
+			  },
+			  () => {
+			  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "LLM1_msg was not found", getCurrentTurn(), {
+	        		elementGetter: "LLM1_msg",
+	        		context: "renderWithRetry fallback function"
+	      		});
+	      		return;
 			  }
 			);
 
@@ -526,10 +542,31 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		sendChatToOpenRouter(conversationHistory,
 			function(response) {
 
+				// Determine variables for robustness
+				var LLMposition = "";
+				var interactions = chat.querySelectorAll("div");
+				for (var i = 0; i < interactions.length; i++) {
+					var node = interactions[i];
+					if (!node.id || node.id.endsWith("dot")) continue;
+
+					if (node.innerHTML.trim() === 'LLMPlaceholder') {
+						LLMposition = node.id;
+						break;
+					}
+				}
+				var dott_id = LLMposition.split("_")[0] + '_dot';
+
 				// Hide loading dot safely
 				renderWithRetry(
 				  () => document.getElementById(dott_id),
-				  (dot) => { dot.style.display = "none"; }
+				  (dot) => { dot.style.display = "none"; },
+				  () => {
+				  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "Dot at a random turn was not found", getCurrentTurn(), {
+	        			elementGetter: "DOT",
+	        			context: "renderWithRetry fallback function"
+	      			});
+	      			return;
+				  }
 				);
 				
 				// If currentTurn == 3, append the blurb in italic
@@ -544,6 +581,19 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				  (llmEl) => {
 				    llmEl.innerHTML = out;
 				    llmEl.style.display = "block";
+				  },
+				  () => {
+				  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "Msg at a random turn was not found", getCurrentTurn(), {
+	        			elementGetter: "MSG",
+	        			context: "renderWithRetry fallback function"
+	      			});
+	      			var interactions = chat.querySelectorAll("div");
+	      			interactions.forEach(div => {
+        				div.style.display = "none";
+    				});
+    				document.getElementById("LLM1_msg").innerHTML = out;
+    				document.getElementById("LLM1_msg").style.display = "block";
+    				return;
 				  }
 				);
 
@@ -562,6 +612,13 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					  (el) => {
 					    el.innerHTML = "<em>" + warningMsg + "</em>";
 					    el.style.display = "block";
+					  },
+					  () => {
+					  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "chatNotice was not found", getCurrentTurn(), {
+	        				elementGetter: "chatNotice",
+	        				context: "renderWithRetry fallback function"
+	      				});
+	      				return;
 					  }
 					);
 				}
