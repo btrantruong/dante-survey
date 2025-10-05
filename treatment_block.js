@@ -657,7 +657,14 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					}
 				}
 				
-				chatInput.disabled = false;
+				// Don't re-enable chat input if we've reached the conversation limit
+				if (currentTurn < 5) {
+					chatInput.disabled = false;
+				} else {
+					// Conversation has ended, keep chat input disabled
+					chatInput.disabled = true;
+					submitBtn.disabled = true;
+				}
 			},
 			function(error) {
 				logError("EXHAUSTION_ERROR", error, currentTurn, {
