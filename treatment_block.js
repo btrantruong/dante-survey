@@ -119,8 +119,9 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			}
 		}
 		availableKeys = [primaryKey, ...otherKeys].filter(key => key && key !== "sk-or...");
-		console.log("Initialized with", availableKeys.length, "API keys");
-		console.log("Available keys:", availableKeys);
+		console.log("OpenAI API is initialized with API keys.");
+		// console.log("Initialized with", availableKeys.length, "API keys");
+		// console.log("Available keys:", availableKeys);
 	}
 	
 	// Get next available key
