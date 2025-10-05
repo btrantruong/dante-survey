@@ -534,7 +534,19 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		console.log("Next LLM placeholder:", LLMposition);
 
 		var dott_id = LLMposition.split("_")[0] + '_dot';
-		document.getElementById(dott_id).style.display = "block";
+		
+		// Show loading dot safely using renderWithRetry
+		renderWithRetry(
+			() => document.getElementById(dott_id),
+			(dot) => { dot.style.display = "block"; },
+			() => {
+				logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "Loading dot " + dott_id + " was not found", getCurrentTurn(), {
+					elementGetter: dott_id,
+					context: "LLMTalk showing loading dot"
+				});
+				return;
+			}
+		);
 
 		// Determine turn number from LLMposition (e.g., LLM2_msg => 2)
 		var turnNumber = parseInt(LLMposition.replace("LLM", "").replace("_msg", ""));
@@ -581,6 +593,8 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				  (llmEl) => {
 				    llmEl.innerHTML = out;
 				    llmEl.style.display = "block";
+					console.log("llmEl:", llmEl);
+					console.log("LLM position:", LLMposition);
 				  },
 				  () => {
 				  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "Msg at a random turn was not found", getCurrentTurn(), {
@@ -591,6 +605,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	      			interactions.forEach(div => {
         				div.style.display = "none";
     				});
+					console.log("Fallback happening: Hid all interactions due to critical rendering failure");
     				document.getElementById("LLM1_msg").innerHTML = out;
     				document.getElementById("LLM1_msg").style.display = "block";
     				return;
