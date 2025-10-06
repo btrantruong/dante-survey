@@ -89,23 +89,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 	var timeout_threshold = 120000; // 2 minutes
 	
-	/**
-	 * Comprehensive error logging function
-	 * 
-	 * Logs errors with detailed context information and saves them to both
-	 * local error log and Qualtrics embedded data for debugging and analysis.
-	 * 
-	 * @param {String} errorType - Category of error (e.g., "DOM_RENDER_ERROR", "API_TIMEOUT")
-	 * @param {String} errorMessage - Human-readable description of the error
-	 * @param {Number} turn - Current conversation turn number
-	 * @param {Object} [context={}] - Additional context information for debugging
-	 * 
-	 * @example
-	 * logError("API_TIMEOUT", "Request timed out after 2 minutes", 3, {
-	 *   timeoutThreshold: 120000,
-	 *   elapsedTime: 125000
-	 * });
-	 */
+	// Log errors with context and save to Qualtrics
 	function logError(errorType, errorMessage, turn, context) {
 		context = context || {};
 		var errorEntry = {
@@ -125,12 +109,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		console.error("[" + errorType + "] Turn " + turn + ":", errorMessage, context);
 	}
 	
-	/**
-	 * Initialize available API keys for OpenRouter
-	 * 
-	 * Loads primary and backup API keys from Qualtrics embedded data.
-	 * Filters out placeholder keys and prepares them for rotation.
-	 */
+	// Initialize API keys from Qualtrics embedded data
 	function initializeKeys() {
 		var primaryKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or...";
 		var otherKeys = [];
@@ -146,15 +125,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		console.log("OpenAI API is initialized with " + availableKeys.length + " API keys.");
 	}
 	
-	/**
-	 * Get next available API key for rotation
-	 * 
-	 * Implements intelligent key rotation to distribute load and handle
-	 * rate limiting. Returns unused keys first, then resets when all
-	 * keys have been used.
-	 * 
-	 * @returns {String} Available API key
-	 */
+	// Get next available API key for rotation
 	function getNextKey() {
 		if (availableKeys.length === 0) {
 			initializeKeys();
@@ -180,15 +151,15 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		return availableKeys[0];
 	}
 	
-	// Mark current key as failed and get next key
+	// Rotate to next API key when current key fails
 	function rotateToNextKey() {
 		if (availableKeys.length > 1) {
 			currentKeyIndex = (currentKeyIndex + 1) % availableKeys.length;
-			console.log("Rotated to key index", currentKeyIndex);
+			console.log("Rotated to key index " + currentKeyIndex);
 		}
 	}
 	
-	// Show exhaustion message and enable Next button
+	// Show exhaustion message when API fails completely
 	function showExhaustionMessage() {
 		var timeoutMessage = "We are facing some trouble with the chatbot right now. Please retry in a few moments by typing your message and clicking the Send button. If the problem persists, please contact us at gciampag+chat@umd.edu. Thank you for the patience!";
 		
@@ -231,35 +202,14 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	}
 
 	/**
-	 * Safe DOM rendering helper with retry mechanism
+	 * Safe DOM rendering with retry mechanism
+	 * @param {Function} getNode - Function that returns the DOM element
+	 * @param {Function} renderFn - Function to manipulate the element
+	 * @param {Function} [fallbackFn] - Optional fallback if rendering fails
+	 * @param {Number} [maxTries=10] - Max retry attempts
+	 * @param {Number} [delayMs=100] - Delay between retries
 	 * 
-	 * Attempts to render a DOM element with automatic retry logic until the element
-	 * becomes available or maximum retry attempts are reached. Provides comprehensive
-	 * error logging and optional fallback functionality.
-	 * 
-	 * @param {Function|String} getNode - Function that returns the DOM element to render,
-	 *                                   or string ID of the element
-	 * @param {Function} renderFn - Function that performs the actual DOM manipulation
-	 *                             on the found element (receives element as parameter)
-	 * @param {Function} [fallbackFn] - Optional function to execute if rendering fails
-	 *                                 (either element not found or render function error)
-	 * @param {Number} [maxTries=10] - Maximum number of retry attempts before giving up
-	 * @param {Number} [delayMs=100] - Delay in milliseconds between retry attempts
-	 * 
-	 * @example
-	 * // Simple usage - just hide an element
-	 * renderWithRetry(
-	 *   () => document.getElementById("myElement"),
-	 *   (el) => { el.style.display = "none"; }
-	 * );
-	 * 
-	 * @example
-	 * // With fallback - show error message if element not found
-	 * renderWithRetry(
-	 *   () => document.getElementById("chatBox"),
-	 *   (el) => { el.innerHTML = "Welcome!"; },
-	 *   () => { console.error("Chat box not available"); }
-	 * );
+	 * fallback: defines action to take if rendering fails. if not specified, the function logs the errors if rendering fails. 
 	 */
 	function renderWithRetry(getNode, renderFn, fallbackFn, maxTries, delayMs) {
 		maxTries = maxTries || 10;
@@ -267,15 +217,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		
 	  var tries = 0;
 	  
-	  /**
-	   * Helper function to extract element ID for error logging
-	   * 
-	   * @returns {String} Element ID or descriptive error state
-	   * - If node exists and has an id: returns the element ID (e.g., "LLM1_dot", "LLM2_msg")
-	   * - If node exists but has a falsy id: returns 'id-unknown'
-	   * - If node doesn't exist: returns 'not-found'
-	   * - If error occurs: returns 'error-getting-id'
-	   */
+	  // Helper to extract element ID for error logging
 	  function getElementId() {
 	    if (typeof getNode === 'string') return getNode;
 	    if (typeof getNode === 'function') {
@@ -286,7 +228,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 	        return 'error-getting-id';
 	      }
 	    }
-	    return 'N/A';
+	    return 'unknown';
 	  }
 	  
 	  (function tick() {
@@ -374,6 +316,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		true  // isInitialCall = true
 	);
 
+	// Handle input changes and enable/disable submit button
 	function handleInputChange() {
 		submitBtn.disabled = (chatInput.value.trim() === '');
 		// Record timestamp when user starts typing (for current turn)
@@ -385,7 +328,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		}
 	}
 
-	// Function to get the current turn (now just returns the global variable)
+	// Get current conversation turn number
 	function getCurrentTurn() {
 		return currentTurn;
 	}
@@ -430,7 +373,17 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		LLMTalk(message, currentTurn);
 	};
 
-	function sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall = false, retryCount = 0) {
+	/**
+	 * Send chat to OpenRouter API with retry logic and key rotation
+	 * @param {Array} conversationHistory - Conversation messages
+	 * @param {Function} onSuccess - Success callback
+	 * @param {Function} onError - Error callback
+	 * @param {Boolean} [isInitialCall=false] - Whether this is initial call
+	 * @param {Number} [retryCount=0] - Current retry count
+	 */
+	function sendChatToOpenRouter(conversationHistory, onSuccess, onError, isInitialCall, retryCount) {
+		isInitialCall = isInitialCall || false;
+		retryCount = retryCount || 0;
 		var apiKey = getNextKey();
 		var OR_model = Qualtrics.SurveyEngine.getEmbeddedData('setModel') || "openai/gpt-4.1";
 
@@ -582,6 +535,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		xhr.send(JSON.stringify(payload));
 	}
 
+	// Handle LLM conversation turn with user message
 	function LLMTalk(userMessage, currentTurn) {
 		chatInput.disabled = true;
 		submitBtn.disabled = true;
@@ -643,7 +597,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				);
 				
 				// If currentTurn == 3, append the blurb in italic
-				let out = response;
+				var out = response;
 				if (currentTurn === 3) {
 					out = response + "<br><br><em>Note that our conversation will end after your next reply.</em>";
 				}
@@ -660,9 +614,9 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				  // Fallback: Hide all interactions and show in LLM1_msg
 				  () => {
 	      			var interactions = chat.querySelectorAll("div");
-	      			interactions.forEach(div => {
-        				div.style.display = "none";
-    				});
+	      			for (var i = 0; i < interactions.length; i++) {
+        				interactions[i].style.display = "none";
+    				}
 					console.log("FALLBACK: Hide all interactions due to critical rendering failure");
     				document.getElementById("LLM1_msg").innerHTML = out;
     				document.getElementById("LLM1_msg").style.display = "block";
