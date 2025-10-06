@@ -89,6 +89,20 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 	var timeout_threshold = 120000; // 2 minutes
 	
+	/**
+	 * NOTE ON TURN NUMBERING:
+	 * `initial_opinion`: Initial User Response (turn 1)
+	 * `llm_response_1`: Initial LLM Response (turn 1)
+	 * `user_response_2`: User Response 2 (turn 2)
+	 * `llm_response_2`: LLM Response 2 (turn 2)
+	 * `user_response_3`: User Response 3 (turn 3)
+	 * `llm_response_3`: LLM Response 3 (turn 3)
+	 * `user_response_4`: User Response 4 (turn 4)
+	 * `llm_response_4`: LLM Response 4 (turn 4)
+	 * 
+	 */ 
+
+
 	// Log errors with context and save to Qualtrics
 	function logError(errorType, errorMessage, turn, context) {
 		context = context || {};
@@ -575,7 +589,12 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 		sendChatToOpenRouter(conversationHistory,
 			function(response) {
+				// Add LLM response to conversation history
+				conversationHistory.push({"role": "assistant", "content": response});
 
+				console.log("LLM [" + turnNumber + "]: " + response);
+				Qualtrics.SurveyEngine.setEmbeddedData('llm_response_' + turnNumber, response);
+				
 				// Determine variables for robustness
 				var LLMposition = "";
 				var interactions = chat.querySelectorAll("div");
@@ -623,11 +642,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				  }
 				);
 
-				// Add LLM response to conversation history
-				conversationHistory.push({"role": "assistant", "content": response});
-
-				console.log("LLM [" + turnNumber + "]: " + response);
-				Qualtrics.SurveyEngine.setEmbeddedData('llm_response_' + turnNumber, response);
 				
 				// Show warning message after LLM response for turn 4
 				if (currentTurn === 4) {
