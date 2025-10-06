@@ -89,8 +89,25 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 
 	var timeout_threshold = 120000; // 2 minutes
 	
-	// Helper function to log errors
-	function logError(errorType, errorMessage, turn, context = {}) {
+	/**
+	 * Comprehensive error logging function
+	 * 
+	 * Logs errors with detailed context information and saves them to both
+	 * local error log and Qualtrics embedded data for debugging and analysis.
+	 * 
+	 * @param {String} errorType - Category of error (e.g., "DOM_RENDER_ERROR", "API_TIMEOUT")
+	 * @param {String} errorMessage - Human-readable description of the error
+	 * @param {Number} turn - Current conversation turn number
+	 * @param {Object} [context={}] - Additional context information for debugging
+	 * 
+	 * @example
+	 * logError("API_TIMEOUT", "Request timed out after 2 minutes", 3, {
+	 *   timeoutThreshold: 120000,
+	 *   elapsedTime: 125000
+	 * });
+	 */
+	function logError(errorType, errorMessage, turn, context) {
+		context = context || {};
 		var errorEntry = {
 			timestamp: Date.now(),
 			turn: turn,
@@ -100,15 +117,20 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		};
 		errorLog.push(errorEntry);
 		
-		// Save to Qualtrics embedded data
+		// Save to Qualtrics embedded data for analysis
 		Qualtrics.SurveyEngine.setEmbeddedData('error_log', JSON.stringify(errorLog));
 		Qualtrics.SurveyEngine.setEmbeddedData('error_count', errorLog.length);
 		Qualtrics.SurveyEngine.setEmbeddedData('last_error', JSON.stringify(errorEntry));
 		
-		console.error(`[${errorType}] Turn ${turn}:`, errorMessage, context);
+		console.error("[" + errorType + "] Turn " + turn + ":", errorMessage, context);
 	}
 	
-	// Initialize available keys
+	/**
+	 * Initialize available API keys for OpenRouter
+	 * 
+	 * Loads primary and backup API keys from Qualtrics embedded data.
+	 * Filters out placeholder keys and prepares them for rotation.
+	 */
 	function initializeKeys() {
 		var primaryKey = Qualtrics.SurveyEngine.getEmbeddedData('OpenRouterAPIKey') || "sk-or...";
 		var otherKeys = [];
@@ -118,13 +140,21 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				otherKeys.push(key);
 			}
 		}
-		availableKeys = [primaryKey, ...otherKeys].filter(key => key && key !== "sk-or...");
-		console.log("OpenAI API is initialized with API keys.");
-		// console.log("Initialized with", availableKeys.length, "API keys");
-		// console.log("Available keys:", availableKeys);
+		availableKeys = [primaryKey].concat(otherKeys).filter(function(key) { 
+			return key && key !== "sk-or..."; 
+		});
+		console.log("OpenAI API is initialized with " + availableKeys.length + " API keys.");
 	}
 	
-	// Get next available key
+	/**
+	 * Get next available API key for rotation
+	 * 
+	 * Implements intelligent key rotation to distribute load and handle
+	 * rate limiting. Returns unused keys first, then resets when all
+	 * keys have been used.
+	 * 
+	 * @returns {String} Available API key
+	 */
 	function getNextKey() {
 		if (availableKeys.length === 0) {
 			initializeKeys();
@@ -137,7 +167,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			if (!usedKeys.has(key)) {
 				currentKeyIndex = keyIndex;
 				usedKeys.add(key);
-				console.log("Using API key at index", keyIndex);
+				console.log("Using API key at index " + keyIndex);
 				return key;
 			}
 		}
@@ -200,34 +230,92 @@ Qualtrics.SurveyEngine.addOnReady(function() {
         console.log("Variable `treatment_passed`: ", Qualtrics.SurveyEngine.getEmbeddedData('treatment_passed'));
 	}
 
-	// === NEW: Safe render helper (retry until node exists, then render) ===
-	function renderWithRetry(getNode, renderFn, fallbackFn, maxTries = 10, delayMs = 100) {
-	  let tries = 0;
+	/**
+	 * Safe DOM rendering helper with retry mechanism
+	 * 
+	 * Attempts to render a DOM element with automatic retry logic until the element
+	 * becomes available or maximum retry attempts are reached. Provides comprehensive
+	 * error logging and optional fallback functionality.
+	 * 
+	 * @param {Function|String} getNode - Function that returns the DOM element to render,
+	 *                                   or string ID of the element
+	 * @param {Function} renderFn - Function that performs the actual DOM manipulation
+	 *                             on the found element (receives element as parameter)
+	 * @param {Function} [fallbackFn] - Optional function to execute if rendering fails
+	 *                                 (either element not found or render function error)
+	 * @param {Number} [maxTries=10] - Maximum number of retry attempts before giving up
+	 * @param {Number} [delayMs=100] - Delay in milliseconds between retry attempts
+	 * 
+	 * @example
+	 * // Simple usage - just hide an element
+	 * renderWithRetry(
+	 *   () => document.getElementById("myElement"),
+	 *   (el) => { el.style.display = "none"; }
+	 * );
+	 * 
+	 * @example
+	 * // With fallback - show error message if element not found
+	 * renderWithRetry(
+	 *   () => document.getElementById("chatBox"),
+	 *   (el) => { el.innerHTML = "Welcome!"; },
+	 *   () => { console.error("Chat box not available"); }
+	 * );
+	 */
+	function renderWithRetry(getNode, renderFn, fallbackFn, maxTries, delayMs) {
+		maxTries = maxTries || 10;
+		delayMs = delayMs || 100;
+		
+	  var tries = 0;
+	  
+	  /**
+	   * Helper function to extract element ID for error logging
+	   * 
+	   * @returns {String} Element ID or descriptive error state
+	   * - If node exists and has an id: returns the element ID (e.g., "LLM1_dot", "LLM2_msg")
+	   * - If node exists but has a falsy id: returns 'id-unknown'
+	   * - If node doesn't exist: returns 'not-found'
+	   * - If error occurs: returns 'error-getting-id'
+	   */
+	  function getElementId() {
+	    if (typeof getNode === 'string') return getNode;
+	    if (typeof getNode === 'function') {
+	      try {
+	        var node = getNode();
+	        return node ? (node.id || 'id-unknown') : 'not-found';
+	      } catch (e) {
+	        return 'error-getting-id';
+	      }
+	    }
+	    return 'N/A';
+	  }
+	  
 	  (function tick() {
-		console.log(`⏳ renderWithRetry: Attempt ${tries + 1}/${maxTries} - checking for element...`);
-	    const node = getNode();
+		console.log("⏳ renderWithRetry: Attempt " + (tries + 1) + "/" + maxTries + " - checking for element...");
+	    var node = getNode();
 	    if (node) {
-		  console.log(`✅ renderWithRetry SUCCESS: Found element after ${tries} tries (${tries * delayMs}ms)`);
-	      try { renderFn(node); 
-				console.log('✅ renderWithRetry: Render function completed successfully');
+		  console.log("✅ renderWithRetry SUCCESS: Found element after " + tries + " tries (" + (tries * delayMs) + "ms)");
+	      try { 
+	        renderFn(node); 
+	        console.log("✅ renderWithRetry: Render function completed successfully");
 		  } 
-	      catch (e) { console.error('Render function failed:', e); 
-			logError("DOM_RENDER_ERROR", "Error during rendering: " + e.message, getCurrentTurn(), {
-				elementGetter: getNode.toString(),
-				context: "renderWithRetry renderFn"
-			});
-			fallbackFn();
+	      catch (e) { 
+	        console.error("Render function failed:", e); 
+	        logError("DOM_RENDER_ERROR", "Error rendering: " + e.message, getCurrentTurn(), {
+	          elementId: getElementId(),
+	          context: "renderWithRetry error in renderFn"
+	        });
+	        if (fallbackFn) fallbackFn();
 		  }
 	      return;
 	    }
 	    if (++tries >= maxTries) {
-	      console.error('Critical DOM element not found after retries. Element getter:', getNode.toString());
-	      // Log this as a critical error for debugging
-	      logError("DOM_ELEMENT_NOT_FOUND_CRITICAL", "Target element never appeared after " + maxTries + " retries", getCurrentTurn(), {
-	        elementGetter: getNode.toString(),
-	        context: "renderWithRetry fallback"
+	      console.error("DOM element not found after retries. Element getter: " + getNode.toString());
+	      // Log this error for debugging
+	      logError("DOM_ELEMENT_NOT_FOUND", "Element not found after " + maxTries + " retries", getCurrentTurn(), {
+	        elementId: getElementId(),
+	        context: "renderWithRetry element not found"
 	      });
-	      fallbackFn();
+	      if (fallbackFn) fallbackFn();
 	      return;
 	    }
 	    setTimeout(tick, delayMs);
@@ -248,14 +336,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			// Hide initial dot safely
 			renderWithRetry(
 			  () => document.getElementById("LLM1_dot"),
-			  (el) => { el.style.display = "none"; },
-			  () => {
-			  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "LLM1_dot was not found", getCurrentTurn(), {
-	        		elementGetter: "LLM1_dot",
-	        		context: "renderWithRetry fallback function"
-	      		});
-	      		return;
-			  }
+			  (el) => { el.style.display = "none"; }
 			);
 
 			// Render initial LLM message safely
@@ -264,13 +345,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 			  (el) => {
 			    el.innerHTML = response;
 			    el.style.display = "block";
-			  },
-			  () => {
-			  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "LLM1_msg was not found", getCurrentTurn(), {
-	        		elementGetter: "LLM1_msg",
-	        		context: "renderWithRetry fallback function"
-	      		});
-	      		return;
 			  }
 			);
 
@@ -539,14 +613,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 		// Show loading dot safely using renderWithRetry
 		renderWithRetry(
 			() => document.getElementById(dott_id),
-			(dot) => { dot.style.display = "block"; },
-			() => {
-				logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "Loading dot " + dott_id + " was not found", getCurrentTurn(), {
-					elementGetter: dott_id,
-					context: "LLMTalk showing loading dot"
-				});
-				return;
-			}
+			(dot) => { dot.style.display = "block"; }
 		);
 
 		// Determine turn number from LLMposition (e.g., LLM2_msg => 2)
@@ -572,14 +639,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 				// Hide loading dot safely
 				renderWithRetry(
 				  () => document.getElementById(dott_id),
-				  (dot) => { dot.style.display = "none"; },
-				  () => {
-				  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "Dot at a random turn was not found", getCurrentTurn(), {
-	        			elementGetter: "DOT",
-	        			context: "renderWithRetry fallback function"
-	      			});
-	      			return;
-				  }
+				  (dot) => { dot.style.display = "none"; }
 				);
 				
 				// If currentTurn == 3, append the blurb in italic
@@ -597,19 +657,15 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					console.log("llmEl:", llmEl);
 					console.log("LLM position:", LLMposition);
 				  },
+				  // Fallback: Hide all interactions and show in LLM1_msg
 				  () => {
-				  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "Msg at a random turn was not found", getCurrentTurn(), {
-	        			elementGetter: "MSG",
-	        			context: "renderWithRetry fallback function"
-	      			});
 	      			var interactions = chat.querySelectorAll("div");
 	      			interactions.forEach(div => {
         				div.style.display = "none";
     				});
-					console.log("Fallback happening: Hid all interactions due to critical rendering failure");
+					console.log("FALLBACK: Hide all interactions due to critical rendering failure");
     				document.getElementById("LLM1_msg").innerHTML = out;
     				document.getElementById("LLM1_msg").style.display = "block";
-    				return;
 				  }
 				);
 
@@ -628,13 +684,6 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 					  (el) => {
 					    el.innerHTML = "<em>" + warningMsg + "</em>";
 					    el.style.display = "block";
-					  },
-					  () => {
-					  	logError("DOM_ELEMENT_NOT_FOUND_WITH_RETRY", "chatNotice was not found", getCurrentTurn(), {
-	        				elementGetter: "chatNotice",
-	        				context: "renderWithRetry fallback function"
-	      				});
-	      				return;
 					  }
 					);
 				}
