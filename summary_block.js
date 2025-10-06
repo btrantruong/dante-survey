@@ -161,7 +161,7 @@ Qualtrics.SurveyEngine.addOnReady(function() {
                     });
                     
                     // Try with next key for certain HTTP errors
-                    if ((xhr.status === 401 || xhr.status === 403 || xhr.status >= 500) && retryCount < 2) {
+                    if ((xhr.status === 0 || xhr.status === 401 || xhr.status === 403 || xhr.status === 408 || xhr.status >= 500) && retryCount < 2) {
                         console.log("HTTP error occurred, trying with next API key...");
                         rotateToNextKey();
                         sendChatToOpenRouter(instructions, onSuccess, onError, retryCount + 1);
