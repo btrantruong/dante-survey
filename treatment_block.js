@@ -482,24 +482,26 @@ Qualtrics.SurveyEngine.addOnReady(function() {
 						try {
 							onSuccess(data.choices[0].message.content);
 						} catch (domErr) {
-							logError("DOM_ERROR_IN_SUCCESS", "DOM error while displaying response", turnForThisCall, {
+							logError("DOM_ERROR_ON_RESPONSE_SUCCESS", "DOM error while displaying response in sendChatToOpenRouter.onSuccess.", turnForThisCall, {
 								responseContent: data.choices[0].message.content,
-								domError: domErr.message,
+								errorDetails: domErr.message,
 								conversationLength: conversationHistory.length,
 								retryCount: retryCount,
 								currentKeyIndex: currentKeyIndex
 							});
 							// Hand back to onError to show exhaustion or custom handling, but no key rotation.
-							onError("DOM error while displaying response");
+							onError("DOM error while displaying response in sendChatToOpenRouter.onSuccess.");
 						}
 						
 					} catch (err) {
-						logError("JSON_PARSE_ERROR", "Error parsing response: " + err.message, turnForThisCall, {
+						logError("ERROR_ON_RESPONSE_SUCCESS", "Error while handling successful API response", turnForThisCall, {
+							errorDetails: err.message,
+							retryCount: retryCount,
 							responseText: xhr.responseText,
 							status: xhr.status,
 							conversationLength: conversationHistory.length
 						});
-						onError("Error parsing response");
+						onError("Error while handling successful API response");
 						}
 				} else {
 					logError("HTTP_ERROR", "HTTP " + xhr.status, turnForThisCall, {
