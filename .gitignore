@@ -2,3 +2,5 @@
 .DS_Store/
 .env
 mock_test_bed/.env
+.env
+.csv
