@@ -3,4 +3,4 @@
 .env
 mock_test_bed/.env
 .env
-.csv
+*.csv
