@@ -56,14 +56,27 @@ def remove_incomplete_llm_interactions(df):
     
     return df[mask]
 
-def main():
+def ensure_integer_columns(df):
+    """Ensure relevant columns are integers."""
+    for col in ['pre_issue_1', 'post_issue_1',
+                'pre_issue_meta_dem_1', 'pre_issue_meta_rep_1',
+                'post_issue_meta_dem_1', 'post_issue_meta_rep_1',
+                'pre_feel_dem_1', 'pre_feel_rep_1', 'post_feel_dem_1', 'post_feel_rep_1',
+                'post_supviol1_1', 'post_supviol2_1', 'post_supundem1_1', 'post_supundem2_1']:
+        df[col] = df[col].astype(float)
+    return df
+
+def main(remove_incomplete=False, remove_duplicate_ips=False):
     """Main preprocessing pipeline."""
-    survey = load_data()
-    survey = clean_survey_data(survey)
-    survey = remove_incomplete_llm_interactions(survey)
-    survey = survey.drop_duplicates(subset=['IPAddress'], keep=False)
-    survey.to_parquet("../data/processed/cleaned_survey_data.parquet", index=False)
-    print(f"Saved {len(survey)} cleaned survey responses")
+    df = load_data()
+    df = clean_survey_data(df)
+    df = ensure_integer_columns(df)
+    if remove_incomplete:
+        df = remove_incomplete_llm_interactions(df)
+    if remove_duplicate_ips:
+        df = df.drop_duplicates(subset=['IPAddress'], keep=False)
+    df.to_parquet("../data/processed/cleaned_survey_data.parquet", index=False)
+    print(f"Saved {len(df)} cleaned survey responses")
 
 if __name__ == "__main__":
     main()
